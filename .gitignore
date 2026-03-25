@@ -205,3 +205,21 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Config with secrets
+config.ini
+
+# Downloaded videos
+videos/
+*.mp4
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
