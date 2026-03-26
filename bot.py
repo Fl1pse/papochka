@@ -4,7 +4,7 @@ from discord.ext import commands
 from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
-from collections import defaultdict, Counter
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 load_dotenv()
@@ -17,7 +17,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 VIDEO_DIR = "videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# Глобальные настройки
 settings = {
     "delete_original": False,
     "suppress_original": True,
@@ -25,22 +24,17 @@ settings = {
     "bot_enabled": True
 }
 
-# Хранилище оценок: {video_message_id: {user_id: (emoji_id, timestamp)}}
-ratings = defaultdict(dict)
+ratings = defaultdict(dict)   # {video_message_id: {user_id: (emoji_id, timestamp)}}
 
-# ==================== RATING VIEW ====================
+# ==================== RATING VIEW (оставляем без изменений) ====================
 class RatingView(ui.View):
     def __init__(self, video_message_id: int):
         super().__init__(timeout=300)
         self.video_message_id = video_message_id
 
         emoji_ids = [
-            1236025121919995924,
-            1186400068765495326,
-            1285518917384536147,
-            1359852698941260016,
-            1452281896984772700,
-            1185699512698810419,
+            1236025121919995924, 1186400068765495326, 1285518917384536147,
+            1359852698941260016, 1452281896984772700, 1185699512698810419,
             1227332109400801320,
         ]
 
@@ -77,7 +71,7 @@ class RatingView(ui.View):
         return embed
 
 
-# ==================== LEADERBOARD VIEW ====================
+# ==================== ИСПРАВЛЕННЫЙ LEADERBOARD VIEW ====================
 class LeaderboardView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -99,26 +93,10 @@ class LeaderboardView(ui.View):
                 if timestamp < cutoff:
                     continue
                 user_stats[user_id]["total"] += 1
-                # Простая логика "худшего" эмодзи (можно улучшить позже)
                 if emoji_id in [1236025121919995924, 1186400068765495326, 1285518917384536147]:
                     user_stats[user_id]["worst_emoji"] = emoji_id
 
         return sorted(user_stats.items(), key=lambda x: x[1]["total"], reverse=True)
-
-    @ui.button(label="За неделю", style=discord.ButtonStyle.gray)
-    async def week(self, interaction: discord.Interaction, button: ui.Button):
-        self.current_period = "week"
-        await self.update_leaderboard(interaction)
-
-    @ui.button(label="За месяц", style=discord.ButtonStyle.gray)
-    async def month(self, interaction: discord.Interaction, button: ui.Button):
-        self.current_period = "month"
-        await self.update_leaderboard(interaction)
-
-    @ui.button(label="За всё время", style=discord.ButtonStyle.blurple)
-    async def all_time(self, interaction: discord.Interaction, button: ui.Button):
-        self.current_period = "all"
-        await self.update_leaderboard(interaction)
 
     async def update_leaderboard(self, interaction: discord.Interaction):
         data = await self.get_leaderboard_data(self.current_period)
@@ -140,10 +118,37 @@ class LeaderboardView(ui.View):
         if not embed.fields:
             embed.description = "Пока нет оценок за выбранный период."
 
-        await interaction.response.edit_message(embed=embed, view=self)
+        # Используем edit_original_response вместо response.edit_message
+        await interaction.edit_original_response(embed=embed, view=self)
+
+    # Кнопки
+    @ui.button(label="За неделю", style=discord.ButtonStyle.gray)
+    async def week(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_period = "week"
+        await self.update_leaderboard(interaction)
+
+    @ui.button(label="За месяц", style=discord.ButtonStyle.gray)
+    async def month(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_period = "month"
+        await self.update_leaderboard(interaction)
+
+    @ui.button(label="За всё время", style=discord.ButtonStyle.blurple)
+    async def all_time(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_period = "all"
+        await self.update_leaderboard(interaction)
 
 
-# ==================== ОСНОВНАЯ VIEW ПОД ВИДЕО ====================
+# ==================== LEADERBOARD COMMAND ====================
+@bot.tree.command(name="leaderboard", description="Показать лидерборд оценок TikTok видео")
+async def leaderboard(interaction: discord.Interaction):
+    view = LeaderboardView()
+    embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
+    embed.description = "Загрузка данных..."
+    
+    await interaction.response.send_message(embed=embed, view=view)
+
+
+# ==================== VideoView и on_message (без изменений) ====================
 class VideoView(ui.View):
     def __init__(self, info: dict, video_message_id: int):
         super().__init__(timeout=3600*6)
@@ -184,15 +189,6 @@ class VideoView(ui.View):
             return
         await interaction.message.delete()
         await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
-
-
-# ==================== LEADERBOARD COMMAND ====================
-@bot.tree.command(name="leaderboard", description="Показать лидерборд оценок TikTok видео")
-async def leaderboard(interaction: discord.Interaction):
-    view = LeaderboardView()
-    embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
-    embed.description = "Загрузка данных..."
-    await interaction.response.send_message(embed=embed, view=view)
 
 
 # ==================== ОБРАБОТКА TIKTOK ====================
