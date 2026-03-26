@@ -5,7 +5,7 @@ from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
 from collections import defaultdict, Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 load_dotenv()
 
@@ -25,10 +25,10 @@ settings = {
     "bot_enabled": True
 }
 
-# Хранилище оценок с временем: {video_message_id: {user_id: (emoji_id, timestamp)}}
+# Хранилище оценок: {video_message_id: {user_id: (emoji_id, timestamp)}}
 ratings = defaultdict(dict)
 
-# ==================== RATING VIEW (только эмодзи) ====================
+# ==================== RATING VIEW ====================
 class RatingView(ui.View):
     def __init__(self, video_message_id: int):
         super().__init__(timeout=300)
@@ -53,7 +53,7 @@ class RatingView(ui.View):
 
     def create_callback(self, emoji_id: int):
         async def callback(interaction: discord.Interaction):
-            ratings[self.video_message_id][interaction.user.id] = (emoji_id, datetime.utcnow())
+            ratings[self.video_message_id][interaction.user.id] = (emoji_id, datetime.now(timezone.utc))
             embed = await self.build_ratings_embed(interaction)
             await interaction.response.edit_message(embed=embed, view=None)
         return callback
@@ -84,13 +84,13 @@ class LeaderboardView(ui.View):
         self.current_period = "all"
 
     async def get_leaderboard_data(self, period: str):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if period == "week":
             cutoff = now - timedelta(days=7)
         elif period == "month":
             cutoff = now - timedelta(days=30)
         else:
-            cutoff = datetime(2020, 1, 1)
+            cutoff = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
         user_stats = defaultdict(lambda: {"total": 0, "worst_emoji": None})
 
@@ -99,8 +99,8 @@ class LeaderboardView(ui.View):
                 if timestamp < cutoff:
                     continue
                 user_stats[user_id]["total"] += 1
-                # Пока берём самый "плохой" эмодзи как индикатор (можно улучшить)
-                if emoji_id in [1236025121919995924, 1186400068765495326, 1285518917384536147]:  # худшие эмодзи
+                # Простая логика "худшего" эмодзи (можно улучшить позже)
+                if emoji_id in [1236025121919995924, 1186400068765495326, 1285518917384536147]:
                     user_stats[user_id]["worst_emoji"] = emoji_id
 
         return sorted(user_stats.items(), key=lambda x: x[1]["total"], reverse=True)
@@ -129,7 +129,7 @@ class LeaderboardView(ui.View):
             if not user:
                 continue
 
-            emoji = bot.get_emoji(stats["worst_emoji"]) if stats.get("worst_emoji") else None
+            emoji = bot.get_emoji(stats.get("worst_emoji")) if stats.get("worst_emoji") else None
             emoji_str = str(emoji) if emoji else "❔"
 
             name = f"#{rank} • {user.display_name}"
