@@ -25,38 +25,43 @@ settings = {
 
 # ==================== VIDEO INFO VIEW ====================
 class VideoView(ui.View):
-    def __init__(self, info: dict, message_id: int):
+    def __init__(self, info: dict):
         super().__init__(timeout=3600)  # 1 час
         self.info = info
-        self.message_id = message_id
 
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
+        title = self.info.get('title', 'Без названия')
+        uploader = self.info.get('uploader', 'Неизвестный автор')
         likes = self.info.get('like_count', 0)
         comments = self.info.get('comment_count', 0)
         shares = self.info.get('repost_count', self.info.get('share_count', 0))
         views = self.info.get('view_count', self.info.get('play_count', 0))
-        title = self.info.get('title', 'Без названия')
 
-        embed = discord.Embed(title="📊 Информация о видео", color=0x00ff00)
-        embed.add_field(name="Название", value=title[:400], inline=False)
+        embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
+        
+        embed.add_field(name="📝 Название", value=title, inline=False)  # Полное название + перенос
+        embed.add_field(name="👤 Автор", value=uploader, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
         embed.add_field(name="🔁 Репосты", value=f"{shares:,}", inline=True)
         embed.add_field(name="👁 Просмотры", value=f"{views:,}", inline=True)
-        embed.set_footer(text=f"ID видео: {self.info.get('id', 'Неизвестно')}")
+        
+        embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')} • Загружено через бот")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
-        # Разрешаем удалять только автору сообщения или администраторам
-        if interaction.user.id != interaction.message.reference.resolved.author.id and not interaction.user.guild_permissions.manage_messages:
-            await interaction.response.send_message("❌ Ты не можешь удалить это видео.", ephemeral=True)
+        # Проверяем права: автор сообщения или модератор
+        if (interaction.message.reference and 
+            interaction.user.id != interaction.message.reference.resolved.author.id) and \
+           not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ Только автор или модератор может удалить это видео.", ephemeral=True)
             return
 
         await interaction.message.delete()
-        await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
+        await interaction.response.send_message("✅ Сообщение с видео удалено.", ephemeral=True)
 
 
 # ==================== SETTINGS VIEW ====================
@@ -146,8 +151,8 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         video_content = f"**{user_display_name}** отправил TikTok"
 
-        # Кнопки показываем только если включено в настройках
-        view = VideoView(info, message.id) if settings["show_buttons"] else None
+        # Кнопки только если включено в настройках
+        view = VideoView(info) if settings["show_buttons"] else None
 
         await message.channel.send(
             content=video_content,
