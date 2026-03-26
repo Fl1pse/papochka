@@ -1,7 +1,7 @@
 import os
 import discord
 from discord.ext import commands
-from discord import app_commands
+from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
 
@@ -23,28 +23,64 @@ settings = {
     "bot_enabled": True
 }
 
+# ==================== VIDEO INFO VIEW ====================
+class VideoView(ui.View):
+    def __init__(self, info: dict, message_id: int):
+        super().__init__(timeout=3600)  # 1 час
+        self.info = info
+        self.message_id = message_id
+
+    @ui.button(label="Info", style=discord.ButtonStyle.blurple)
+    async def show_info(self, interaction: discord.Interaction, button: ui.Button):
+        likes = self.info.get('like_count', 0)
+        comments = self.info.get('comment_count', 0)
+        shares = self.info.get('repost_count', self.info.get('share_count', 0))
+        views = self.info.get('view_count', self.info.get('play_count', 0))
+        title = self.info.get('title', 'Без названия')
+
+        embed = discord.Embed(title="📊 Информация о видео", color=0x00ff00)
+        embed.add_field(name="Название", value=title[:256], inline=False)
+        embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
+        embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
+        embed.add_field(name="🔁 Репосты", value=f"{shares:,}", inline=True)
+        embed.add_field(name="👁 Просмотры", value=f"{views:,}", inline=True)
+        embed.set_footer(text=f"ID видео: {self.info.get('id', 'Неизвестно')}")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Delete", style=discord.ButtonStyle.red)
+    async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
+        # Разрешаем удалять только автору сообщения или администраторам
+        if interaction.user.id != interaction.message.reference.resolved.author.id and not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ Ты не можешь удалить это видео.", ephemeral=True)
+            return
+
+        await interaction.message.delete()
+        await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
+
+
 # ==================== SETTINGS VIEW ====================
-class OptionsView(discord.ui.View):
+class OptionsView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Delete Original", style=discord.ButtonStyle.red, row=0)
-    async def toggle_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @ui.button(label="Delete Original", style=discord.ButtonStyle.red, row=0)
+    async def toggle_delete(self, interaction: discord.Interaction, button: ui.Button):
         settings["delete_original"] = not settings["delete_original"]
         await self.update_settings(interaction)
 
-    @discord.ui.button(label="Suppress Original", style=discord.ButtonStyle.green, row=0)
-    async def toggle_suppress(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @ui.button(label="Suppress Original", style=discord.ButtonStyle.green, row=0)
+    async def toggle_suppress(self, interaction: discord.Interaction, button: ui.Button):
         settings["suppress_original"] = not settings["suppress_original"]
         await self.update_settings(interaction)
 
-    @discord.ui.button(label="Show Buttons", style=discord.ButtonStyle.blurple, row=0)
-    async def toggle_buttons(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @ui.button(label="Show Buttons", style=discord.ButtonStyle.blurple, row=0)
+    async def toggle_buttons(self, interaction: discord.Interaction, button: ui.Button):
         settings["show_buttons"] = not settings["show_buttons"]
         await self.update_settings(interaction)
 
-    @discord.ui.button(label="Turn Bot ON/OFF", style=discord.ButtonStyle.gray, row=1)
-    async def toggle_bot(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @ui.button(label="Turn Bot ON/OFF", style=discord.ButtonStyle.gray, row=1)
+    async def toggle_bot(self, interaction: discord.Interaction, button: ui.Button):
         settings["bot_enabled"] = not settings["bot_enabled"]
         await self.update_settings(interaction)
 
@@ -58,6 +94,7 @@ class OptionsView(discord.ui.View):
                     f"Состояние бота: {status}",
             view=self
         )
+
 
 # ==================== SLASH COMMAND ====================
 @bot.tree.command(name="options", description="Открыть настройки бота")
@@ -73,6 +110,7 @@ async def options(interaction: discord.Interaction):
         ephemeral=True
     )
 
+
 # ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
@@ -86,8 +124,6 @@ async def on_message(message: discord.Message):
         return
 
     url = tiktok_urls[0]
-
-    # Сообщение о скачивании
     status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
 
     try:
@@ -105,16 +141,18 @@ async def on_message(message: discord.Message):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # Меняем статус на "Готово!"
-        await status_msg.edit(content=f"✅ **Готово!**")
+        await status_msg.edit(content="✅ **Готово!**")
 
-        # Отправляем видео с именем пользователя
         user_display_name = message.author.display_name
         video_content = f"**{user_display_name}** отправил TikTok"
 
-        video_msg = await message.channel.send(
+        # Кнопки показываем только если включено в настройках
+        view = VideoView(info, message.id) if settings["show_buttons"] else None
+
+        await message.channel.send(
             content=video_content,
-            file=discord.File(filename)
+            file=discord.File(filename),
+            view=view
         )
 
         if os.path.exists(filename):
@@ -123,14 +161,12 @@ async def on_message(message: discord.Message):
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("✅")
 
-        # === Suppress Original ===
         if settings["suppress_original"]:
             try:
-                await message.edit(suppress=True)   # убирает embed от TikTok
+                await message.edit(suppress=True)
             except:
                 pass
 
-        # === Delete Original ===
         if settings["delete_original"]:
             try:
                 await message.delete()
@@ -143,7 +179,7 @@ async def on_message(message: discord.Message):
         await message.add_reaction("❌")
         print(f"Ошибка с {url}: {e}")
 
-# ==================== ЗАПУСК ====================
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
