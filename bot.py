@@ -15,18 +15,18 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 VIDEO_DIR = "videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# Глобальные настройки (пока в памяти)
+# Глобальные настройки
 settings = {
-    "delete_original": False,      # Удалять оригинальное сообщение
-    "suppress_original": True,     # Подавлять embed оригинальной ссылки
-    "show_buttons": True,          # Показывать кнопки под видео
-    "bot_enabled": True            # Вкл/выкл бота
+    "delete_original": False,
+    "suppress_original": True,
+    "show_buttons": True,
+    "bot_enabled": True
 }
 
 # ==================== SETTINGS VIEW ====================
 class OptionsView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)  # persistent view
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="Delete Original", style=discord.ButtonStyle.red, row=0)
     async def toggle_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -46,15 +46,7 @@ class OptionsView(discord.ui.View):
     @discord.ui.button(label="Turn Bot ON/OFF", style=discord.ButtonStyle.gray, row=1)
     async def toggle_bot(self, interaction: discord.Interaction, button: discord.ui.Button):
         settings["bot_enabled"] = not settings["bot_enabled"]
-        status = "✅ **Включён**" if settings["bot_enabled"] else "⛔ **Выключен**"
-        await interaction.response.edit_message(
-            content=f"**Настройки бота**\n\n"
-                    f"Delete Original: {'✅' if settings['delete_original'] else '❌'}\n"
-                    f"Suppress Original: {'✅' if settings['suppress_original'] else '❌'}\n"
-                    f"Show Buttons: {'✅' if settings['show_buttons'] else '❌'}\n\n"
-                    f"Состояние бота: {status}",
-            view=self
-        )
+        await self.update_settings(interaction)
 
     async def update_settings(self, interaction: discord.Interaction):
         status = "✅ **Включён**" if settings["bot_enabled"] else "⛔ **Выключен**"
@@ -78,7 +70,7 @@ async def options(interaction: discord.Interaction):
                 f"Show Buttons: {'✅' if settings['show_buttons'] else '❌'}\n\n"
                 f"Состояние бота: {status}",
         view=OptionsView(),
-        ephemeral=True  # только автор команды видит
+        ephemeral=True
     )
 
 # ==================== ОБРАБОТКА TIKTOK ====================
@@ -95,7 +87,7 @@ async def on_message(message: discord.Message):
 
     url = tiktok_urls[0]
 
-    # Отправляем сообщение "Скачиваю..." и сохраняем его
+    # Сообщение о скачивании
     status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
 
     try:
@@ -113,12 +105,15 @@ async def on_message(message: discord.Message):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # Меняем сообщение на "Готово!"
-        await status_msg.edit(content=f"✅ **Готово!**\n{url}")
+        # Меняем статус на "Готово!"
+        await status_msg.edit(content=f"✅ **Готово!**")
 
-        # Отправляем видео
+        # Отправляем видео с именем пользователя
+        user_display_name = message.author.display_name
+        video_content = f"**{user_display_name}** отправил TikTok"
+
         video_msg = await message.channel.send(
-            content=url,  # оставляем оригинальную ссылку
+            content=video_content,
             file=discord.File(filename)
         )
 
@@ -128,7 +123,14 @@ async def on_message(message: discord.Message):
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("✅")
 
-        # Удаляем оригинальное сообщение, если включено
+        # === Suppress Original ===
+        if settings["suppress_original"]:
+            try:
+                await message.edit(suppress=True)   # убирает embed от TikTok
+            except:
+                pass
+
+        # === Delete Original ===
         if settings["delete_original"]:
             try:
                 await message.delete()
@@ -144,7 +146,7 @@ async def on_message(message: discord.Message):
 # ==================== ЗАПУСК ====================
 @bot.event
 async def on_ready():
-    await bot.tree.sync()  # синхронизация слэш-команд
+    await bot.tree.sync()
     print(f'✅ Бот запущен как {bot.user} | Работает во всех каналах')
 
 if __name__ == "__main__":
