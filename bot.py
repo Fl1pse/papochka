@@ -30,7 +30,7 @@ class VideoView(ui.View):
         self.info = info
         self.message_id = message_id
 
-    @ui.button(label="📄Info", style=discord.ButtonStyle.blurple)
+    @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         likes = self.info.get('like_count', 0)
         comments = self.info.get('comment_count', 0)
