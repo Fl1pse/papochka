@@ -4,7 +4,7 @@ from discord.ext import commands
 from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 load_dotenv()
 
@@ -27,13 +27,12 @@ settings = {
 # Хранилище оценок: {video_message_id: {user_id: emoji_id}}
 ratings = defaultdict(dict)
 
-# ==================== RATING VIEW ====================
+# ==================== RATING VIEW (только эмодзи) ====================
 class RatingView(ui.View):
     def __init__(self, video_message_id: int):
-        super().__init__(timeout=300)  # 5 минут
+        super().__init__(timeout=300)
         self.video_message_id = video_message_id
 
-        # === ТВОИ ЭМОДЗИ (только эмодзи, без текста) ===
         emoji_ids = [
             1236025121919995924,
             1186400068765495326,
@@ -53,13 +52,9 @@ class RatingView(ui.View):
 
     def create_callback(self, emoji_id: int):
         async def callback(interaction: discord.Interaction):
-            # Сохраняем оценку
             ratings[self.video_message_id][interaction.user.id] = emoji_id
-
-            # Показываем обновлённый список оценок
             embed = await self.build_ratings_embed(interaction)
             await interaction.response.edit_message(embed=embed, view=None)
-
         return callback
 
     async def build_ratings_embed(self, interaction: discord.Interaction):
@@ -75,18 +70,64 @@ class RatingView(ui.View):
             user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
             emoji = bot.get_emoji(emoji_id)
             emoji_str = str(emoji) if emoji else "❔"
-
             description += f"{emoji_str} **{user.display_name}**\n"
 
         embed.description = description.strip()
-        embed.set_footer(text="Нажми на кнопку Rate, чтобы изменить свою оценку")
+        embed.set_footer(text="Нажми Rate, чтобы изменить оценку")
         return embed
+
+
+# ==================== LEADERBOARD COMMAND ====================
+@bot.tree.command(name="leaderboard", description="Показать лидерборд оценок TikTok видео")
+async def leaderboard(interaction: discord.Interaction):
+    if not ratings:
+        await interaction.response.send_message("Пока никто не ставил оценки видео.", ephemeral=True)
+        return
+
+    # Считаем статистику по пользователям
+    user_stats = defaultdict(lambda: {"total": 0, "emojis": Counter()})
+
+    for video_ratings in ratings.values():
+        for user_id, emoji_id in video_ratings.items():
+            user_stats[user_id]["total"] += 1
+            user_stats[user_id]["emojis"][emoji_id] += 1
+
+    # Сортируем по количеству оценок (убыванию)
+    sorted_users = sorted(user_stats.items(), key=lambda x: x[1]["total"], reverse=True)
+
+    embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
+    embed.description = "Топ участников по количеству поставленных оценок\n"
+
+    for rank, (user_id, data) in enumerate(sorted_users[:15], 1):  # топ-15
+        user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
+        if not user:
+            continue
+
+        total = data["total"]
+        # Самый популярный эмодзи у пользователя
+        if data["emojis"]:
+            most_common_emoji_id = data["emojis"].most_common(1)[0][0]
+            most_emoji = bot.get_emoji(most_common_emoji_id)
+            emoji_str = str(most_emoji) if most_emoji else "❔"
+        else:
+            emoji_str = "❔"
+
+        embed.add_field(
+            name=f"{rank}. {user.display_name}",
+            value=f"Оценок: **{total}** | Самый частый: {emoji_str}",
+            inline=False
+        )
+
+    if not embed.fields:
+        embed.description = "Пока нет данных для лидерборда."
+
+    await interaction.response.send_message(embed=embed)
 
 
 # ==================== ОСНОВНАЯ VIEW ПОД ВИДЕО ====================
 class VideoView(ui.View):
     def __init__(self, info: dict, video_message_id: int):
-        super().__init__(timeout=3600*6)  # 6 часов
+        super().__init__(timeout=3600*6)
         self.info = info
         self.video_message_id = video_message_id
 
@@ -112,7 +153,6 @@ class VideoView(ui.View):
 
     @ui.button(label="⭐ Rate", style=discord.ButtonStyle.green)
     async def rate_video(self, interaction: discord.Interaction, button: ui.Button):
-        """Открывает панель рейтинга"""
         view = RatingView(self.video_message_id)
         embed = await view.build_ratings_embed(interaction)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
