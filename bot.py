@@ -118,10 +118,13 @@ class LeaderboardView(ui.View):
         if not embed.fields:
             embed.description = "Пока нет оценок за выбранный период."
 
-        # Используем edit_original_response вместо response.edit_message
-        await interaction.edit_original_response(embed=embed, view=self)
+        # Исправление: используем edit вместо edit_original_response
+        try:
+            await interaction.message.edit(embed=embed, view=self)
+        except:
+            # Fallback если message уже недоступен
+            await interaction.response.edit_message(embed=embed, view=self)
 
-    # Кнопки
     @ui.button(label="За неделю", style=discord.ButtonStyle.gray)
     async def week(self, interaction: discord.Interaction, button: ui.Button):
         self.current_period = "week"
@@ -144,9 +147,8 @@ async def leaderboard(interaction: discord.Interaction):
     view = LeaderboardView()
     embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
     embed.description = "Загрузка данных..."
-    
-    await interaction.response.send_message(embed=embed, view=view)
 
+    await interaction.response.send_message(embed=embed, view=view)
 
 # ==================== VideoView и on_message (без изменений) ====================
 class VideoView(ui.View):
