@@ -30,7 +30,7 @@ class VideoView(ui.View):
         self.info = info
         self.message_id = message_id
 
-    @ui.button(label="Info", style=discord.ButtonStyle.blurple)
+    @ui.button(label="📄Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         likes = self.info.get('like_count', 0)
         comments = self.info.get('comment_count', 0)
@@ -39,7 +39,7 @@ class VideoView(ui.View):
         title = self.info.get('title', 'Без названия')
 
         embed = discord.Embed(title="📊 Информация о видео", color=0x00ff00)
-        embed.add_field(name="Название", value=title[:256], inline=False)
+        embed.add_field(name="Название", value=title[:400], inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
         embed.add_field(name="🔁 Репосты", value=f"{shares:,}", inline=True)
@@ -48,7 +48,7 @@ class VideoView(ui.View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @ui.button(label="Delete", style=discord.ButtonStyle.red)
+    @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
         # Разрешаем удалять только автору сообщения или администраторам
         if interaction.user.id != interaction.message.reference.resolved.author.id and not interaction.user.guild_permissions.manage_messages:
