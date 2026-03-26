@@ -27,50 +27,60 @@ settings = {
 # Хранилище оценок: {video_message_id: {user_id: emoji_id}}
 ratings = defaultdict(dict)
 
-# ==================== RATING VIEW (панель, которую видит только пользователь) ====================
+# ==================== RATING VIEW ====================
 class RatingView(ui.View):
     def __init__(self, video_message_id: int):
         super().__init__(timeout=300)  # 5 минут
         self.video_message_id = video_message_id
 
-        # === Здесь вставляй ID своих серверных эмодзи ===
-        # Замени числа на реальные ID эмодзи с твоего сервера
+        # === ТВОИ ЭМОДЗИ (только эмодзи, без текста) ===
         emoji_ids = [
-            1236025121919995924,   # 1 эмодзи (например "cry")
-            1186400068765495326,   # 2
-            1285518917384536147,   # 3
-            1359852698941260016,   # 4
-            1452281896984772700,   # 5
-            1185699512698810419,   # 6
-            1227332109400801320,   # 7 (например "rofl")
+            1236025121919995924,
+            1186400068765495326,
+            1285518917384536147,
+            1359852698941260016,
+            1452281896984772700,
+            1185699512698810419,
+            1227332109400801320,
         ]
 
-        labels = ["😭 Не смешно", "🙂 Слабовато", "👍 Норм", "😂 Смешно", "🤣 Очень смешно", "🔥 Огонь", "💀 Умер"]
-
-        for i, (emoji_id, label) in enumerate(zip(emoji_ids, labels)):
+        for emoji_id in emoji_ids:
             emoji = bot.get_emoji(emoji_id)
-            button = ui.Button(label=label, style=discord.ButtonStyle.gray, emoji=emoji, row=i//4)
-            button.callback = self.create_callback(emoji_id)
-            self.add_item(button)
+            if emoji:
+                button = ui.Button(style=discord.ButtonStyle.gray, emoji=emoji)
+                button.callback = self.create_callback(emoji_id)
+                self.add_item(button)
 
     def create_callback(self, emoji_id: int):
         async def callback(interaction: discord.Interaction):
             # Сохраняем оценку
             ratings[self.video_message_id][interaction.user.id] = emoji_id
 
-            await interaction.response.edit_message(
-                content="✅ Твоя оценка сохранена!",
-                view=None
-            )
-
-            # Обновляем основное сообщение (опционально — можно показывать суммарный рейтинг)
-            try:
-                msg = await interaction.channel.fetch_message(self.video_message_id)
-                await msg.edit(content=msg.content)  # триггер обновления
-            except:
-                pass
+            # Показываем обновлённый список оценок
+            embed = await self.build_ratings_embed(interaction)
+            await interaction.response.edit_message(embed=embed, view=None)
 
         return callback
+
+    async def build_ratings_embed(self, interaction: discord.Interaction):
+        embed = discord.Embed(title="📊 Рейтинг смехуятинки", color=0xFF0050)
+        video_ratings = ratings.get(self.video_message_id, {})
+
+        if not video_ratings:
+            embed.description = "Пока никто не оценил это видео."
+            return embed
+
+        description = ""
+        for user_id, emoji_id in video_ratings.items():
+            user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
+            emoji = bot.get_emoji(emoji_id)
+            emoji_str = str(emoji) if emoji else "❔"
+
+            description += f"{emoji_str} **{user.display_name}**\n"
+
+        embed.description = description.strip()
+        embed.set_footer(text="Нажми на кнопку Rate, чтобы изменить свою оценку")
+        return embed
 
 
 # ==================== ОСНОВНАЯ VIEW ПОД ВИДЕО ====================
@@ -82,7 +92,6 @@ class VideoView(ui.View):
 
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
-        # ... (твой старый код Info остаётся без изменений)
         title = self.info.get('title', 'Без названия')
         uploader = self.info.get('uploader', 'Неизвестный автор')
         likes = self.info.get('like_count', 0)
@@ -103,17 +112,14 @@ class VideoView(ui.View):
 
     @ui.button(label="⭐ Rate", style=discord.ButtonStyle.green)
     async def rate_video(self, interaction: discord.Interaction, button: ui.Button):
-        """Открывает панель с оценками — только для этого пользователя"""
+        """Открывает панель рейтинга"""
         view = RatingView(self.video_message_id)
-        await interaction.response.send_message(
-            content="**Оцени видео:**\nВыбери насколько оно смешное:",
-            view=view,
-            ephemeral=True
-        )
+        embed = await view.build_ratings_embed(interaction)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
-        if (interaction.user.id != interaction.message.reference.resolved.author.id if interaction.message.reference else True) and \
+        if (interaction.message.reference and interaction.user.id != interaction.message.reference.resolved.author.id) and \
            not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ Только автор или модератор может удалить это видео.", ephemeral=True)
             return
@@ -121,9 +127,7 @@ class VideoView(ui.View):
         await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
 
 
-# ==================== ОСТАЛЬНОЙ КОД (Settings, on_message и т.д.) ====================
-# (оставляю без изменений, кроме добавления video_message_id)
-
+# ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -158,9 +162,9 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         video_content = f"**{user_display_name}** отправил TikTok"
 
-        view = VideoView(info, message.id) if settings["show_buttons"] else None   # ← передаём message.id
+        view = VideoView(info, message.id) if settings["show_buttons"] else None
 
-        video_msg = await message.channel.send(
+        await message.channel.send(
             content=video_content,
             file=discord.File(filename),
             view=view
