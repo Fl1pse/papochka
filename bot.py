@@ -5,6 +5,7 @@ from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
 from collections import defaultdict, Counter
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -24,7 +25,7 @@ settings = {
     "bot_enabled": True
 }
 
-# Хранилище оценок: {video_message_id: {user_id: emoji_id}}
+# Хранилище оценок с временем: {video_message_id: {user_id: (emoji_id, timestamp)}}
 ratings = defaultdict(dict)
 
 # ==================== RATING VIEW (только эмодзи) ====================
@@ -52,7 +53,7 @@ class RatingView(ui.View):
 
     def create_callback(self, emoji_id: int):
         async def callback(interaction: discord.Interaction):
-            ratings[self.video_message_id][interaction.user.id] = emoji_id
+            ratings[self.video_message_id][interaction.user.id] = (emoji_id, datetime.utcnow())
             embed = await self.build_ratings_embed(interaction)
             await interaction.response.edit_message(embed=embed, view=None)
         return callback
@@ -60,13 +61,12 @@ class RatingView(ui.View):
     async def build_ratings_embed(self, interaction: discord.Interaction):
         embed = discord.Embed(title="📊 Рейтинг смехуятинки", color=0xFF0050)
         video_ratings = ratings.get(self.video_message_id, {})
-
         if not video_ratings:
             embed.description = "Пока никто не оценил это видео."
             return embed
 
         description = ""
-        for user_id, emoji_id in video_ratings.items():
+        for user_id, (emoji_id, _) in video_ratings.items():
             user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
             emoji = bot.get_emoji(emoji_id)
             emoji_str = str(emoji) if emoji else "❔"
@@ -77,51 +77,70 @@ class RatingView(ui.View):
         return embed
 
 
-# ==================== LEADERBOARD COMMAND ====================
-@bot.tree.command(name="leaderboard", description="Показать лидерборд оценок TikTok видео")
-async def leaderboard(interaction: discord.Interaction):
-    if not ratings:
-        await interaction.response.send_message("Пока никто не ставил оценки видео.", ephemeral=True)
-        return
+# ==================== LEADERBOARD VIEW ====================
+class LeaderboardView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.current_period = "all"
 
-    # Считаем статистику по пользователям
-    user_stats = defaultdict(lambda: {"total": 0, "emojis": Counter()})
-
-    for video_ratings in ratings.values():
-        for user_id, emoji_id in video_ratings.items():
-            user_stats[user_id]["total"] += 1
-            user_stats[user_id]["emojis"][emoji_id] += 1
-
-    # Сортируем по количеству оценок (убыванию)
-    sorted_users = sorted(user_stats.items(), key=lambda x: x[1]["total"], reverse=True)
-
-    embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
-    embed.description = "Топ участников по количеству поставленных оценок\n"
-
-    for rank, (user_id, data) in enumerate(sorted_users[:15], 1):  # топ-15
-        user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
-        if not user:
-            continue
-
-        total = data["total"]
-        # Самый популярный эмодзи у пользователя
-        if data["emojis"]:
-            most_common_emoji_id = data["emojis"].most_common(1)[0][0]
-            most_emoji = bot.get_emoji(most_common_emoji_id)
-            emoji_str = str(most_emoji) if most_emoji else "❔"
+    async def get_leaderboard_data(self, period: str):
+        now = datetime.utcnow()
+        if period == "week":
+            cutoff = now - timedelta(days=7)
+        elif period == "month":
+            cutoff = now - timedelta(days=30)
         else:
-            emoji_str = "❔"
+            cutoff = datetime(2020, 1, 1)
 
-        embed.add_field(
-            name=f"{rank}. {user.display_name}",
-            value=f"Оценок: **{total}** | Самый частый: {emoji_str}",
-            inline=False
-        )
+        user_stats = defaultdict(lambda: {"total": 0, "worst_emoji": None})
 
-    if not embed.fields:
-        embed.description = "Пока нет данных для лидерборда."
+        for video_ratings in ratings.values():
+            for user_id, (emoji_id, timestamp) in video_ratings.items():
+                if timestamp < cutoff:
+                    continue
+                user_stats[user_id]["total"] += 1
+                # Пока берём самый "плохой" эмодзи как индикатор (можно улучшить)
+                if emoji_id in [1236025121919995924, 1186400068765495326, 1285518917384536147]:  # худшие эмодзи
+                    user_stats[user_id]["worst_emoji"] = emoji_id
 
-    await interaction.response.send_message(embed=embed)
+        return sorted(user_stats.items(), key=lambda x: x[1]["total"], reverse=True)
+
+    @ui.button(label="За неделю", style=discord.ButtonStyle.gray)
+    async def week(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_period = "week"
+        await self.update_leaderboard(interaction)
+
+    @ui.button(label="За месяц", style=discord.ButtonStyle.gray)
+    async def month(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_period = "month"
+        await self.update_leaderboard(interaction)
+
+    @ui.button(label="За всё время", style=discord.ButtonStyle.blurple)
+    async def all_time(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_period = "all"
+        await self.update_leaderboard(interaction)
+
+    async def update_leaderboard(self, interaction: discord.Interaction):
+        data = await self.get_leaderboard_data(self.current_period)
+        embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
+
+        for rank, (user_id, stats) in enumerate(data[:10], 1):
+            user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
+            if not user:
+                continue
+
+            emoji = bot.get_emoji(stats["worst_emoji"]) if stats.get("worst_emoji") else None
+            emoji_str = str(emoji) if emoji else "❔"
+
+            name = f"#{rank} • {user.display_name}"
+            value = f"{emoji_str} • Оценок: **{stats['total']}**"
+
+            embed.add_field(name=name, value=value, inline=False)
+
+        if not embed.fields:
+            embed.description = "Пока нет оценок за выбранный период."
+
+        await interaction.response.edit_message(embed=embed, view=self)
 
 
 # ==================== ОСНОВНАЯ VIEW ПОД ВИДЕО ====================
@@ -165,6 +184,15 @@ class VideoView(ui.View):
             return
         await interaction.message.delete()
         await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
+
+
+# ==================== LEADERBOARD COMMAND ====================
+@bot.tree.command(name="leaderboard", description="Показать лидерборд оценок TikTok видео")
+async def leaderboard(interaction: discord.Interaction):
+    view = LeaderboardView()
+    embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
+    embed.description = "Загрузка данных..."
+    await interaction.response.send_message(embed=embed, view=view)
 
 
 # ==================== ОБРАБОТКА TIKTOK ====================
