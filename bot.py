@@ -24,9 +24,9 @@ settings = {
     "bot_enabled": True
 }
 
-ratings = defaultdict(dict)   # {video_message_id: {user_id: (emoji_id, timestamp)}}
+ratings = defaultdict(dict)  # {video_message_id: {user_id: (emoji_id, timestamp)}}
 
-# ==================== RATING VIEW (оставляем без изменений) ====================
+# ==================== RATING VIEW ====================
 class RatingView(ui.View):
     def __init__(self, video_message_id: int):
         super().__init__(timeout=300)
@@ -71,7 +71,7 @@ class RatingView(ui.View):
         return embed
 
 
-# ==================== ИСПРАВЛЕННЫЙ LEADERBOARD VIEW ====================
+# ==================== LEADERBOARD VIEW ====================
 class LeaderboardView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -106,23 +106,18 @@ class LeaderboardView(ui.View):
             user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
             if not user:
                 continue
-
             emoji = bot.get_emoji(stats.get("worst_emoji")) if stats.get("worst_emoji") else None
             emoji_str = str(emoji) if emoji else "❔"
-
             name = f"#{rank} • {user.display_name}"
             value = f"{emoji_str} • Оценок: **{stats['total']}**"
-
             embed.add_field(name=name, value=value, inline=False)
 
         if not embed.fields:
             embed.description = "Пока нет оценок за выбранный период."
 
-        # Исправление: используем edit вместо edit_original_response
         try:
             await interaction.message.edit(embed=embed, view=self)
         except:
-            # Fallback если message уже недоступен
             await interaction.response.edit_message(embed=embed, view=self)
 
     @ui.button(label="За неделю", style=discord.ButtonStyle.gray)
@@ -141,21 +136,12 @@ class LeaderboardView(ui.View):
         await self.update_leaderboard(interaction)
 
 
-# ==================== LEADERBOARD COMMAND ====================
-@bot.tree.command(name="leaderboard", description="Показать лидерборд оценок TikTok видео")
-async def leaderboard(interaction: discord.Interaction):
-    view = LeaderboardView()
-    embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
-    embed.description = "Загрузка данных..."
-
-    await interaction.response.send_message(embed=embed, view=view)
-
-# ==================== VideoView и on_message (без изменений) ====================
-class VideoView(ui.View):
-    def __init__(self, info: dict, video_message_id: int):
+# ==================== УНИВЕРСАЛЬНАЯ VIEW ДЛЯ ВИДЕО И ФОТО ====================
+class MediaView(ui.View):
+    def __init__(self, info: dict, message_id: int):
         super().__init__(timeout=3600*6)
         self.info = info
-        self.video_message_id = video_message_id
+        self.message_id = message_id
 
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
@@ -166,7 +152,7 @@ class VideoView(ui.View):
         shares = self.info.get('repost_count', self.info.get('share_count', 0))
         views = self.info.get('view_count', self.info.get('play_count', 0))
 
-        embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
+        embed = discord.Embed(title="📊 Информация о TikTok", color=0xFF0050)
         embed.add_field(name="📝 Название", value=title, inline=False)
         embed.add_field(name="👤 Автор", value=uploader, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
@@ -179,7 +165,7 @@ class VideoView(ui.View):
 
     @ui.button(label="⭐ Rate", style=discord.ButtonStyle.green)
     async def rate_video(self, interaction: discord.Interaction, button: ui.Button):
-        view = RatingView(self.video_message_id)
+        view = RatingView(self.message_id)
         embed = await view.build_ratings_embed(interaction)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -187,13 +173,13 @@ class VideoView(ui.View):
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
         if (interaction.message.reference and interaction.user.id != interaction.message.reference.resolved.author.id) and \
            not interaction.user.guild_permissions.manage_messages:
-            await interaction.response.send_message("❌ Только автор или модератор может удалить это видео.", ephemeral=True)
+            await interaction.response.send_message("❌ Только автор или модератор может удалить это.", ephemeral=True)
             return
         await interaction.message.delete()
-        await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
+        await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK ====================
+# ==================== ОБРАБОТКА TIKTOK (ВИДЕО + ФОТО) ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -206,7 +192,7 @@ async def on_message(message: discord.Message):
         return
 
     url = tiktok_urls[0]
-    status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
+    status_msg = await message.channel.send("🔄 Скачиваю из TikTok...")
 
     try:
         await message.add_reaction("⏳")
@@ -226,15 +212,32 @@ async def on_message(message: discord.Message):
         await status_msg.edit(content="✅ **Готово!**")
 
         user_display_name = message.author.display_name
-        video_content = f"**{user_display_name}** отправил TikTok"
+        content = f"**{user_display_name}** отправил TikTok"
 
-        view = VideoView(info, message.id) if settings["show_buttons"] else None
+        # Проверка: фото или видео?
+        is_photo = info.get('duration') is None or info.get('duration') == 0
 
-        await message.channel.send(
-            content=video_content,
-            file=discord.File(filename),
-            view=view
-        )
+        if is_photo and info.get('entries'):  # Карусель фото
+            files = []
+            for i, entry in enumerate(info['entries'][:10]):  # максимум 10 фото
+                if entry.get('url'):
+                    files.append(discord.File(entry['url'], filename=f"photo_{i+1}.jpg"))
+
+            if files:
+                await message.channel.send(
+                    content=content,
+                    files=files,
+                    view=MediaView(info, message.id) if settings["show_buttons"] else None
+                )
+            else:
+                await message.channel.send(content=content + "\nНе удалось скачать фото.")
+
+        else:  # Обычное видео
+            await message.channel.send(
+                content=content,
+                file=discord.File(filename),
+                view=MediaView(info, message.id) if settings["show_buttons"] else None
+            )
 
         if os.path.exists(filename):
             os.remove(filename)
@@ -264,7 +267,8 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_ready():
     await bot.tree.sync()
-    print(f'✅ Бот запущен как {bot.user} | Работает во всех каналах')
+    print(f'✅ Бот запущен как {bot.user} | Поддержка видео + фото')
+
 
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
