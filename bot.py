@@ -181,7 +181,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK С TIKWM API ====================
+# ==================== ОБРАБОТКА TIKTOK (TikWM API) ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -199,7 +199,7 @@ async def on_message(message: discord.Message):
     try:
         await message.add_reaction("⏳")
 
-        # Используем TikWM API
+        # TikWM API
         api_url = f"https://api.tikwm.com/?url={original_url}&hd=1"
         response = requests.get(api_url, timeout=20)
         data = response.json()
@@ -211,7 +211,7 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         content = f"**{user_display_name}** отправил TikTok"
 
-        # Если это фото-карусель
+        # Фото-карусель
         if result.get('images'):
             files = []
             for i, img_url in enumerate(result['images'][:10]):
