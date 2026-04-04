@@ -180,7 +180,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK ====================
+# ==================== ОБРАБОТКА TIKTOK (ТОЛЬКО ВИДЕО) ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -193,11 +193,6 @@ async def on_message(message: discord.Message):
         return
 
     url = tiktok_urls[0]
-
-    # Если это фото-пост — тихо пропускаем
-    if "/photo/" in url:
-        return
-
     status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
 
     try:
@@ -246,15 +241,9 @@ async def on_message(message: discord.Message):
                 pass
 
     except Exception:
-        # Тихо удаляем сообщение "Скачиваю..." и ничего не пишем пользователю
-        try:
-            await status_msg.delete()
-        except:
-            pass
-
+        await status_msg.edit(content="❌ Не удалось скачать видео")
         await message.remove_reaction("⏳", bot.user)
-        # Можно добавить реакцию ❌ если хочешь
-        # await message.add_reaction("❌")
+        await message.add_reaction("❌")
 
 
 @bot.event
