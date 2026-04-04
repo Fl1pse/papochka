@@ -193,6 +193,11 @@ async def on_message(message: discord.Message):
         return
 
     url = tiktok_urls[0]
+
+    # Если это фото-пост — тихо пропускаем
+    if "/photo/" in url:
+        return
+
     status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
 
     try:
@@ -241,10 +246,15 @@ async def on_message(message: discord.Message):
                 pass
 
     except Exception:
-        # Просто тихое сообщение без ссылки
-        await status_msg.edit(content="❌ Не удалось скачать видео")
+        # Тихо удаляем сообщение "Скачиваю..." и ничего не пишем пользователю
+        try:
+            await status_msg.delete()
+        except:
+            pass
+
         await message.remove_reaction("⏳", bot.user)
-        await message.add_reaction("❌")
+        # Можно добавить реакцию ❌ если хочешь
+        # await message.add_reaction("❌")
 
 
 @bot.event
