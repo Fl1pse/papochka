@@ -194,14 +194,10 @@ async def on_message(message: discord.Message):
 
     url = tiktok_urls[0]
 
-    # Если это явно фото-пост — сразу говорим, что не поддерживается
+    # Пропускаем фото-посты без сообщений об ошибке
     if "/photo/" in url:
-        status_msg = await message.channel.send("🔄 Скачиваю из TikTok...")
-        await status_msg.edit(content="❌ Неподдерживаемый формат (это фото-пост)")
-        await message.add_reaction("❌")
         return
 
-    # Обычное видео (включая vt.tiktok.com)
     status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
 
     try:
@@ -250,10 +246,14 @@ async def on_message(message: discord.Message):
                 pass
 
     except Exception as e:
-        await status_msg.edit(content="❌ Неподдерживаемый формат (возможно фото-пост)")
+        # Тихо удаляем сообщение "Скачиваю..." без показа ошибки пользователю
+        try:
+            await status_msg.delete()
+        except:
+            pass
+
         await message.remove_reaction("⏳", bot.user)
-        await message.add_reaction("❌")
-        print(f"Неподдерживаемый формат: {url}")
+        print(f"Неподдерживаемый формат или ошибка: {url}")
 
 
 @bot.event
