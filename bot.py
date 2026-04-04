@@ -26,6 +26,7 @@ settings = {
 
 ratings = defaultdict(dict)
 
+
 # ==================== RATING VIEW ====================
 class RatingView(ui.View):
     def __init__(self, video_message_id: int):
@@ -71,7 +72,7 @@ class RatingView(ui.View):
         return embed
 
 
-# ==================== LEADERBOARD (оставляем) ====================
+# ==================== LEADERBOARD VIEW ====================
 class LeaderboardView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -179,7 +180,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK (УЛУЧШЕНАЯ) ====================
+# ==================== ОБРАБОТКА TIKTOK (УЛУЧШЕННАЯ) ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -191,12 +192,13 @@ async def on_message(message: discord.Message):
     if not tiktok_urls:
         return
 
-    url = tiktok_urls[0]
+    original_url = tiktok_urls[0]
     status_msg = await message.channel.send("🔄 Скачиваю из TikTok...")
 
     try:
         await message.add_reaction("⏳")
 
+        # Основные настройки
         ydl_opts = {
             'format': 'best',
             'merge_output_format': 'mp4',
@@ -204,12 +206,10 @@ async def on_message(message: discord.Message):
             'quiet': True,
             'no_warnings': True,
             'noplaylist': False,
-            'extract_flat': False,
-            'force_generic_extractor': False,
         }
 
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            info = ydl.extract_info(original_url, download=True)
             filename = ydl.prepare_filename(info)
 
         await status_msg.edit(content="✅ **Готово!**")
@@ -233,9 +233,9 @@ async def on_message(message: discord.Message):
                     view=MediaView(info, message.id) if settings["show_buttons"] else None
                 )
             else:
-                await message.channel.send(content=content + "\nНе удалось скачать фото.")
+                await message.channel.send(content=content + "\nНе удалось скачать изображения.")
         else:
-            # Видео
+            # Обычное видео
             await message.channel.send(
                 content=content,
                 file=discord.File(filename),
@@ -261,10 +261,27 @@ async def on_message(message: discord.Message):
                 pass
 
     except Exception as e:
-        await status_msg.edit(content=f"❌ Ошибка при скачивании: {str(e)[:300]}")
+        # Попытка №2: меняем /photo/ на /video/ (часто помогает достать хотя бы аудио)
+        try:
+            if "/photo/" in original_url:
+                fixed_url = original_url.replace("/photo/", "/video/")
+                with YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(fixed_url, download=True)
+                    filename = ydl.prepare_filename(info)
+
+                await status_msg.edit(content="✅ **Готово!** (только аудио)")
+                await message.channel.send(
+                    content=f"**{user_display_name}** отправил TikTok (фото + звук)",
+                    file=discord.File(filename)
+                )
+                if os.path.exists(filename):
+                    os.remove(filename)
+        except:
+            await status_msg.edit(content=f"❌ Не удалось скачать: {str(e)[:250]}")
+            print(f"Ошибка с {original_url}: {e}")
+
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("❌")
-        print(f"Ошибка с {url}: {e}")
 
 
 @bot.event
