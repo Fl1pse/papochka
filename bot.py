@@ -6,6 +6,7 @@ from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import requests
 
 load_dotenv()
 
@@ -180,7 +181,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK ====================
+# ==================== ОБРАБОТКА TIKTOK С TIKWM API ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -198,54 +199,45 @@ async def on_message(message: discord.Message):
     try:
         await message.add_reaction("⏳")
 
-        ydl_opts = {
-            'format': 'best',
-            'merge_output_format': 'mp4',
-            'outtmpl': os.path.join(VIDEO_DIR, '%(id)s_%(title)s.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': False,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-                'Referer': 'https://www.tiktok.com/',
-            },
-        }
+        # Используем TikWM API
+        api_url = f"https://api.tikwm.com/?url={original_url}&hd=1"
+        response = requests.get(api_url, timeout=20)
+        data = response.json()
 
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(original_url, download=True)
-            filename = ydl.prepare_filename(info)
+        if data.get('code') != 0:
+            raise Exception(data.get('msg', 'API error'))
 
-        await status_msg.edit(content="✅ **Готово!**")
-
+        result = data['data']
         user_display_name = message.author.display_name
         content = f"**{user_display_name}** отправил TikTok"
 
-        is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 0
-
-        if is_photo_carousel:
+        # Если это фото-карусель
+        if result.get('images'):
             files = []
-            for i, entry in enumerate(info['entries'][:10]):
-                if entry.get('url'):
-                    files.append(discord.File(entry['url'], filename=f"photo_{i+1}.jpg"))
+            for i, img_url in enumerate(result['images'][:10]):
+                img_data = requests.get(img_url, timeout=15).content
+                files.append(discord.File(img_data, filename=f"photo_{i+1}.jpg"))
 
             if files:
                 await message.channel.send(
                     content=content,
                     files=files,
-                    view=MediaView(info, message.id) if settings["show_buttons"] else None
+                    view=MediaView(result, message.id) if settings["show_buttons"] else None
                 )
             else:
                 await message.channel.send(content=content + "\nНе удалось скачать фото.")
         else:
+            # Видео
+            video_url = result.get('hdplay') or result.get('play')
+            video_data = requests.get(video_url, timeout=20).content
+
             await message.channel.send(
                 content=content,
-                file=discord.File(filename),
-                view=MediaView(info, message.id) if settings["show_buttons"] else None
+                file=discord.File(video_data, filename="tiktok.mp4"),
+                view=MediaView(result, message.id) if settings["show_buttons"] else None
             )
 
-        if os.path.exists(filename):
-            os.remove(filename)
-
+        await status_msg.edit(content="✅ **Готово!**")
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("✅")
 
@@ -254,7 +246,6 @@ async def on_message(message: discord.Message):
                 await message.edit(suppress=True)
             except:
                 pass
-
         if settings["delete_original"]:
             try:
                 await message.delete()
@@ -262,27 +253,7 @@ async def on_message(message: discord.Message):
                 pass
 
     except Exception as e:
-        # Fallback: пытаемся заменить /photo/ на /video/
-        try:
-            if "/photo/" in original_url:
-                fixed_url = original_url.replace("/photo/", "/video/")
-                with YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(fixed_url, download=True)
-                    filename = ydl.prepare_filename(info)
-
-                await status_msg.edit(content="✅ **Готово!** (видео + звук)")
-                await message.channel.send(
-                    content=content,
-                    file=discord.File(filename),
-                    view=MediaView(info, message.id) if settings["show_buttons"] else None
-                )
-                if os.path.exists(filename):
-                    os.remove(filename)
-                return
-        except:
-            pass
-
-        await status_msg.edit(content=f"❌ Не удалось скачать фото/видео: {str(e)[:200]}")
+        await status_msg.edit(content=f"❌ Не удалось скачать: {str(e)[:200]}")
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("❌")
         print(f"Ошибка с {original_url}: {e}")
@@ -291,7 +262,7 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_ready():
     await bot.tree.sync()
-    print(f'✅ Бот запущен как {bot.user} | Поддержка видео + фото')
+    print(f'✅ Бот запущен как {bot.user} | TikWM API (видео + фото)')
 
 
 if __name__ == "__main__":
