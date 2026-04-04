@@ -194,14 +194,14 @@ async def on_message(message: discord.Message):
 
     url = tiktok_urls[0]
 
-    # Если это фото-пост — сразу говорим, что не поддерживается
+    # Если это явно фото-пост — сразу говорим, что не поддерживается
     if "/photo/" in url:
         status_msg = await message.channel.send("🔄 Скачиваю из TikTok...")
         await status_msg.edit(content="❌ Неподдерживаемый формат (это фото-пост)")
         await message.add_reaction("❌")
         return
 
-    # Обычное видео
+    # Обычное видео (включая vt.tiktok.com)
     status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
 
     try:
