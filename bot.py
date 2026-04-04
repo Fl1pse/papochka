@@ -2,7 +2,6 @@ import os
 import discord
 from discord.ext import commands
 from discord import app_commands, ui
-from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -181,7 +180,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK (TikWM API) ====================
+# ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -211,8 +210,7 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         content = f"**{user_display_name}** отправил TikTok"
 
-        # Фото-карусель
-        if result.get('images'):
+        if result.get('images'):  # Фото-карусель
             files = []
             for i, img_url in enumerate(result['images'][:10]):
                 img_data = requests.get(img_url, timeout=15).content
@@ -226,8 +224,7 @@ async def on_message(message: discord.Message):
                 )
             else:
                 await message.channel.send(content=content + "\nНе удалось скачать фото.")
-        else:
-            # Видео
+        else:  # Видео
             video_url = result.get('hdplay') or result.get('play')
             video_data = requests.get(video_url, timeout=20).content
 
@@ -262,7 +259,7 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_ready():
     await bot.tree.sync()
-    print(f'✅ Бот запущен как {bot.user} | TikWM API (видео + фото)')
+    print(f'✅ Бот запущен как {bot.user} | TikWM API')
 
 
 if __name__ == "__main__":
