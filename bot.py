@@ -24,8 +24,7 @@ settings = {
     "bot_enabled": True
 }
 
-ratings = defaultdict(dict)  # {video_message_id: {user_id: (emoji_id, timestamp)}}
-
+ratings = defaultdict(dict)
 
 # ==================== RATING VIEW ====================
 class RatingView(ui.View):
@@ -72,7 +71,7 @@ class RatingView(ui.View):
         return embed
 
 
-# ==================== LEADERBOARD VIEW ====================
+# ==================== LEADERBOARD (оставляем) ====================
 class LeaderboardView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -137,7 +136,7 @@ class LeaderboardView(ui.View):
         await self.update_leaderboard(interaction)
 
 
-# ==================== УНИВЕРСАЛЬНАЯ VIEW ====================
+# ==================== MEDIA VIEW ====================
 class MediaView(ui.View):
     def __init__(self, info: dict, message_id: int):
         super().__init__(timeout=3600*6)
@@ -180,7 +179,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK (ВИДЕО + ФОТО) ====================
+# ==================== ОБРАБОТКА TIKTOK (УЛУЧШЕНАЯ) ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -205,6 +204,8 @@ async def on_message(message: discord.Message):
             'quiet': True,
             'no_warnings': True,
             'noplaylist': False,
+            'extract_flat': False,
+            'force_generic_extractor': False,
         }
 
         with YoutubeDL(ydl_opts) as ydl:
@@ -216,10 +217,10 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         content = f"**{user_display_name}** отправил TikTok"
 
-        # Определяем тип контента
+        # Проверка на фото-карусель
         is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 0
 
-        if is_photo_carousel:  # Фото-карусель
+        if is_photo_carousel:
             files = []
             for i, entry in enumerate(info['entries'][:10]):
                 if entry.get('url'):
@@ -233,8 +234,8 @@ async def on_message(message: discord.Message):
                 )
             else:
                 await message.channel.send(content=content + "\nНе удалось скачать фото.")
-
-        else:  # Видео
+        else:
+            # Видео
             await message.channel.send(
                 content=content,
                 file=discord.File(filename),
