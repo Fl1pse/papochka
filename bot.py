@@ -26,6 +26,7 @@ settings = {
 
 ratings = defaultdict(dict)  # {video_message_id: {user_id: (emoji_id, timestamp)}}
 
+
 # ==================== RATING VIEW ====================
 class RatingView(ui.View):
     def __init__(self, video_message_id: int):
@@ -136,7 +137,7 @@ class LeaderboardView(ui.View):
         await self.update_leaderboard(interaction)
 
 
-# ==================== УНИВЕРСАЛЬНАЯ VIEW ДЛЯ ВИДЕО И ФОТО ====================
+# ==================== УНИВЕРСАЛЬНАЯ VIEW ====================
 class MediaView(ui.View):
     def __init__(self, info: dict, message_id: int):
         super().__init__(timeout=3600*6)
@@ -203,6 +204,7 @@ async def on_message(message: discord.Message):
             'outtmpl': os.path.join(VIDEO_DIR, '%(id)s_%(title)s.%(ext)s'),
             'quiet': True,
             'no_warnings': True,
+            'noplaylist': False,
         }
 
         with YoutubeDL(ydl_opts) as ydl:
@@ -214,12 +216,12 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         content = f"**{user_display_name}** отправил TikTok"
 
-        # Проверка: фото или видео?
-        is_photo = info.get('duration') is None or info.get('duration') == 0
+        # Определяем тип контента
+        is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 0
 
-        if is_photo and info.get('entries'):  # Карусель фото
+        if is_photo_carousel:  # Фото-карусель
             files = []
-            for i, entry in enumerate(info['entries'][:10]):  # максимум 10 фото
+            for i, entry in enumerate(info['entries'][:10]):
                 if entry.get('url'):
                     files.append(discord.File(entry['url'], filename=f"photo_{i+1}.jpg"))
 
@@ -232,7 +234,7 @@ async def on_message(message: discord.Message):
             else:
                 await message.channel.send(content=content + "\nНе удалось скачать фото.")
 
-        else:  # Обычное видео
+        else:  # Видео
             await message.channel.send(
                 content=content,
                 file=discord.File(filename),
