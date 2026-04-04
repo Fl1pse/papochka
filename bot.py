@@ -180,7 +180,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK (ВИДЕО + ФОТО) ====================
+# ==================== ОБРАБОТКА TIKTOK (УЛУЧШЕННАЯ ПОДДЕРЖКА ФОТО) ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -198,7 +198,7 @@ async def on_message(message: discord.Message):
     try:
         await message.add_reaction("⏳")
 
-        # Улучшенные настройки специально для фото-постов
+        # Улучшенные настройки для фото
         ydl_opts = {
             'format': 'best',
             'merge_output_format': 'mp4',
@@ -208,8 +208,7 @@ async def on_message(message: discord.Message):
             'noplaylist': False,
             'extract_flat': False,
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                              '(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
                 'Referer': 'https://www.tiktok.com/',
             },
         }
@@ -224,7 +223,7 @@ async def on_message(message: discord.Message):
         content = f"**{user_display_name}** отправил TikTok"
 
         # Проверка на фото-карусель
-        is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 0
+        is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 1
 
         if is_photo_carousel:
             files = []
