@@ -198,6 +198,7 @@ async def on_message(message: discord.Message):
     try:
         await message.add_reaction("⏳")
 
+        # Улучшенные настройки специально для фото-постов
         ydl_opts = {
             'format': 'best',
             'merge_output_format': 'mp4',
@@ -206,6 +207,11 @@ async def on_message(message: discord.Message):
             'no_warnings': True,
             'noplaylist': False,
             'extract_flat': False,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                              '(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+                'Referer': 'https://www.tiktok.com/',
+            },
         }
 
         with YoutubeDL(ydl_opts) as ydl:
@@ -217,12 +223,10 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         content = f"**{user_display_name}** отправил TikTok"
 
-        # Проверка на фото
-        is_photo = info.get('duration') is None or info.get('duration') == 0
-        is_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 0
+        # Проверка на фото-карусель
+        is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 0
 
-        if is_photo and is_carousel:
-            # Карусель фото
+        if is_photo_carousel:
             files = []
             for i, entry in enumerate(info['entries'][:10]):
                 if entry.get('url'):
