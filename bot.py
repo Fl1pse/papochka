@@ -180,7 +180,7 @@ class MediaView(ui.View):
         await interaction.response.send_message("✅ Удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK (УЛУЧШЕННАЯ ПОДДЕРЖКА ФОТО) ====================
+# ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -198,7 +198,6 @@ async def on_message(message: discord.Message):
     try:
         await message.add_reaction("⏳")
 
-        # Улучшенные настройки для фото
         ydl_opts = {
             'format': 'best',
             'merge_output_format': 'mp4',
@@ -206,7 +205,6 @@ async def on_message(message: discord.Message):
             'quiet': True,
             'no_warnings': True,
             'noplaylist': False,
-            'extract_flat': False,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
                 'Referer': 'https://www.tiktok.com/',
@@ -222,8 +220,7 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         content = f"**{user_display_name}** отправил TikTok"
 
-        # Проверка на фото-карусель
-        is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 1
+        is_photo_carousel = info.get('entries') is not None and len(info.get('entries', [])) > 0
 
         if is_photo_carousel:
             files = []
@@ -240,7 +237,6 @@ async def on_message(message: discord.Message):
             else:
                 await message.channel.send(content=content + "\nНе удалось скачать фото.")
         else:
-            # Обычное видео
             await message.channel.send(
                 content=content,
                 file=discord.File(filename),
@@ -266,7 +262,27 @@ async def on_message(message: discord.Message):
                 pass
 
     except Exception as e:
-        await status_msg.edit(content=f"❌ Не удалось скачать: {str(e)[:250]}")
+        # Fallback: пытаемся заменить /photo/ на /video/
+        try:
+            if "/photo/" in original_url:
+                fixed_url = original_url.replace("/photo/", "/video/")
+                with YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(fixed_url, download=True)
+                    filename = ydl.prepare_filename(info)
+
+                await status_msg.edit(content="✅ **Готово!** (видео + звук)")
+                await message.channel.send(
+                    content=content,
+                    file=discord.File(filename),
+                    view=MediaView(info, message.id) if settings["show_buttons"] else None
+                )
+                if os.path.exists(filename):
+                    os.remove(filename)
+                return
+        except:
+            pass
+
+        await status_msg.edit(content=f"❌ Не удалось скачать фото/видео: {str(e)[:200]}")
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("❌")
         print(f"Ошибка с {original_url}: {e}")
