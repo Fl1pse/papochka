@@ -61,18 +61,22 @@ class VideoView(ui.View):
         if len(tags_str) > 900:
             tags_str = tags_str[:897] + "..."
 
-        # Улучшенное извлечение музыки
+        # Улучшенное извлечение музыки (приоритет настоящему треку)
         music_title = (self.info.get('track') or 
                        self.info.get('music_title') or 
                        self.info.get('music') or 
-                       self.info.get('original_sound') or "Неизвестно")
+                       self.info.get('original_sound_title') or 
+                       "Original Sound")
 
         music_artist = (self.info.get('artist') or 
                         self.info.get('music_author') or 
                         self.info.get('music_creator') or 
                         self.info.get('creator') or "")
 
-        if music_artist and music_title.lower() != "original sound":
+        # Если это оригинальный звук — показываем автора видео
+        if "original sound" in music_title.lower():
+            music_str = f"Original Sound — {uploader}"
+        elif music_artist:
             music_str = f"{music_title} — {music_artist}"
         else:
             music_str = music_title
