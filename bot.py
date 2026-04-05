@@ -33,7 +33,15 @@ class VideoView(ui.View):
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         title = self.info.get('title', 'Без названия')
-        uploader = self.info.get('uploader', 'Неизвестный автор')
+        uploader = self.info.get('uploader', 'Неизвестный автор')           # дисплейное имя
+        uploader_id = self.info.get('uploader_id', '')                      # @username
+
+        # Формируем красивое отображение автора
+        if uploader_id:
+            author_str = f"{uploader} (@{uploader_id})"
+        else:
+            author_str = uploader
+
         likes = self.info.get('like_count', 0)
         comments = self.info.get('comment_count', 0)
         shares = self.info.get('repost_count', self.info.get('share_count', 0))
@@ -44,7 +52,6 @@ class VideoView(ui.View):
         clean_title = re.sub(r'#\w+', '', title).strip()
         if not clean_title:
             clean_title = title
-
         if len(clean_title) > 900:
             clean_title = clean_title[:897] + "..."
 
@@ -52,16 +59,14 @@ class VideoView(ui.View):
         tags = self.info.get('tags', self.info.get('hashtags', []))
         if not tags and title:
             tags = re.findall(r'#(\w+)', title)
-
         if isinstance(tags, list):
             tags_str = " ".join([f"#{tag}" for tag in tags]) if tags else "Нет тегов"
         else:
             tags_str = str(tags) if tags else "Нет тегов"
-
         if len(tags_str) > 900:
             tags_str = tags_str[:897] + "..."
 
-        # Улучшенное извлечение музыки (приоритет настоящему треку)
+        # Музыка
         music_title = (self.info.get('track') or 
                        self.info.get('music_title') or 
                        self.info.get('music') or 
@@ -73,7 +78,6 @@ class VideoView(ui.View):
                         self.info.get('music_creator') or 
                         self.info.get('creator') or "")
 
-        # Если это оригинальный звук — показываем автора видео
         if "original sound" in music_title.lower():
             music_str = f"Original Sound — {uploader}"
         elif music_artist:
@@ -92,7 +96,7 @@ class VideoView(ui.View):
      
         embed.add_field(name="📝 Название", value=clean_title, inline=False)
         embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
-        embed.add_field(name="👤 Автор", value=uploader, inline=False)
+        embed.add_field(name="👤 Автор", value=author_str, inline=False)   # ← Изменено здесь
         embed.add_field(name="🎵 Музыка", value=music_str, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
