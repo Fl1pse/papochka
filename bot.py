@@ -31,7 +31,12 @@ class VideoView(ui.View):
         shares = self.info.get('repost_count', self.info.get('share_count', 0))
         views = self.info.get('view_count', self.info.get('play_count', 0))
         favorites = self.info.get('save_count', self.info.get('bookmark_count', self.info.get('favorites_count', 0)))
+
+        # Извлечение тегов (сначала из info, если нет — парсим из названия)
         tags = self.info.get('tags', self.info.get('hashtags', []))
+        if not tags and title:
+            import re
+            tags = re.findall(r'#(\w+)', title)
         if isinstance(tags, list):
             tags_str = " ".join([f"#{tag}" for tag in tags]) if tags else "Нет тегов"
         else:
@@ -45,8 +50,9 @@ class VideoView(ui.View):
             formatted_date = "Неизвестно"
 
         embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
-      
+     
         embed.add_field(name="📝 Название", value=title, inline=False)
+        embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)   # Теги вторыми
         embed.add_field(name="👤 Автор", value=uploader, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
@@ -54,8 +60,7 @@ class VideoView(ui.View):
         embed.add_field(name="👁 Просмотры", value=f"{views:,}", inline=True)
         embed.add_field(name="⭐ Избранное", value=f"{favorites:,}", inline=True)
         embed.add_field(name="📅 Дата загрузки", value=formatted_date, inline=True)
-        embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
-      
+     
         embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')} • Загружено через бот")
         await interaction.response.send_message(embed=embed, ephemeral=True)
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
