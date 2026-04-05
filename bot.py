@@ -45,7 +45,7 @@ class VideoView(ui.View):
         if not clean_title:
             clean_title = title
 
-        # Безопасное обрезание названия (максимум ~900 символов)
+        # Безопасное обрезание названия
         if len(clean_title) > 900:
             clean_title = clean_title[:897] + "..."
 
@@ -59,9 +59,17 @@ class VideoView(ui.View):
         else:
             tags_str = str(tags) if tags else "Нет тегов"
 
-        # Безопасное обрезание тегов
         if len(tags_str) > 900:
             tags_str = tags_str[:897] + "..."
+
+        # Музыка / звук из видео
+        music_title = self.info.get('track') or self.info.get('music_title') or self.info.get('music') or "Неизвестно"
+        music_artist = self.info.get('artist') or self.info.get('music_author') or self.info.get('creator') or ""
+
+        if music_artist:
+            music_str = f"{music_title} — {music_artist}"
+        else:
+            music_str = music_title
 
         # Дата загрузки
         upload_date = self.info.get('upload_date', '')
@@ -75,6 +83,7 @@ class VideoView(ui.View):
         embed.add_field(name="📝 Название", value=clean_title, inline=False)
         embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
         embed.add_field(name="👤 Автор", value=uploader, inline=False)
+        embed.add_field(name="🎵 Музыка", value=music_str, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
         embed.add_field(name="🔁 Репосты", value=f"{shares:,}", inline=True)
