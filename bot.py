@@ -32,27 +32,24 @@ class VideoView(ui.View):
 
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
-        # Дисплейное имя (то, что видно на странице)
-        display_name = self.info.get('uploader', 'Неизвестный автор')
+        title = self.info.get('title', 'Без названия')
+        display_name = self.info.get('uploader', 'Неизвестный автор')   # дисплейное имя
 
-        # Оригинальный @username
+        # Получаем оригинальный @username
         username = ""
         if self.info.get('uploader_url'):
             match = re.search(r'tiktok\.com/@([\w.]+)', self.info.get('uploader_url', ''))
             if match:
                 username = match.group(1)
-
-        # Если не нашли через ссылку, пробуем другие ключи
         if not username:
             username = self.info.get('uploader_id', '') or self.info.get('channel', '')
 
-        # Финальная строка автора
+        # Формируем автора в две строки
         if username and username != display_name:
-            author_str = f"{display_name} (@{username})"
+            author_str = f"{display_name}\n@{username}"
         else:
             author_str = display_name
 
-        title = self.info.get('title', 'Без названия')
         likes = self.info.get('like_count', 0)
         comments = self.info.get('comment_count', 0)
         shares = self.info.get('repost_count', self.info.get('share_count', 0))
@@ -107,7 +104,7 @@ class VideoView(ui.View):
      
         embed.add_field(name="📝 Название", value=clean_title, inline=False)
         embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
-        embed.add_field(name="👤 Автор", value=author_str, inline=False)   # ← Здесь и дисплейное, и @ник
+        embed.add_field(name="👤 Автор", value=author_str, inline=False)   # ← Две строки
         embed.add_field(name="🎵 Музыка", value=music_str, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
