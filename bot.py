@@ -4,8 +4,6 @@ from discord.ext import commands
 from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
 
 load_dotenv()
 
@@ -17,6 +15,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 VIDEO_DIR = "videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
+# Глобальные настройки
 settings = {
     "delete_original": False,
     "suppress_original": True,
@@ -24,125 +23,11 @@ settings = {
     "bot_enabled": True
 }
 
-ratings = defaultdict(dict)
-
-
-# ==================== RATING VIEW ====================
-class RatingView(ui.View):
-    def __init__(self, video_message_id: int):
-        super().__init__(timeout=300)
-        self.video_message_id = video_message_id
-
-        emoji_ids = [
-            1236025121919995924, 1186400068765495326, 1285518917384536147,
-            1359852698941260016, 1452281896984772700, 1185699512698810419,
-            1227332109400801320,
-        ]
-
-        for emoji_id in emoji_ids:
-            emoji = bot.get_emoji(emoji_id)
-            if emoji:
-                button = ui.Button(style=discord.ButtonStyle.gray, emoji=emoji)
-                button.callback = self.create_callback(emoji_id)
-                self.add_item(button)
-
-    def create_callback(self, emoji_id: int):
-        async def callback(interaction: discord.Interaction):
-            ratings[self.video_message_id][interaction.user.id] = (emoji_id, datetime.now(timezone.utc))
-            embed = await self.build_ratings_embed(interaction)
-            await interaction.response.edit_message(embed=embed, view=None)
-        return callback
-
-    async def build_ratings_embed(self, interaction: discord.Interaction):
-        embed = discord.Embed(title="📊 Рейтинг смехуятинки", color=0xFF0050)
-        video_ratings = ratings.get(self.video_message_id, {})
-        if not video_ratings:
-            embed.description = "Пока никто не оценил это видео."
-            return embed
-
-        description = ""
-        for user_id, (emoji_id, _) in video_ratings.items():
-            user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
-            emoji = bot.get_emoji(emoji_id)
-            emoji_str = str(emoji) if emoji else "❔"
-            description += f"{emoji_str} **{user.display_name}**\n"
-
-        embed.description = description.strip()
-        embed.set_footer(text="Нажми Rate, чтобы изменить оценку")
-        return embed
-
-
-# ==================== LEADERBOARD VIEW ====================
-class LeaderboardView(ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.current_period = "all"
-
-    async def get_leaderboard_data(self, period: str):
-        now = datetime.now(timezone.utc)
-        if period == "week":
-            cutoff = now - timedelta(days=7)
-        elif period == "month":
-            cutoff = now - timedelta(days=30)
-        else:
-            cutoff = datetime(2020, 1, 1, tzinfo=timezone.utc)
-
-        user_stats = defaultdict(lambda: {"total": 0, "worst_emoji": None})
-
-        for video_ratings in ratings.values():
-            for user_id, (emoji_id, timestamp) in video_ratings.items():
-                if timestamp < cutoff:
-                    continue
-                user_stats[user_id]["total"] += 1
-                if emoji_id in [1236025121919995924, 1186400068765495326, 1285518917384536147]:
-                    user_stats[user_id]["worst_emoji"] = emoji_id
-
-        return sorted(user_stats.items(), key=lambda x: x[1]["total"], reverse=True)
-
-    async def update_leaderboard(self, interaction: discord.Interaction):
-        data = await self.get_leaderboard_data(self.current_period)
-        embed = discord.Embed(title="🏆 Лидерборд смехуятинки", color=0xFFD700)
-
-        for rank, (user_id, stats) in enumerate(data[:10], 1):
-            user = interaction.guild.get_member(user_id) or await bot.fetch_user(user_id)
-            if not user:
-                continue
-            emoji = bot.get_emoji(stats.get("worst_emoji")) if stats.get("worst_emoji") else None
-            emoji_str = str(emoji) if emoji else "❔"
-            name = f"#{rank} • {user.display_name}"
-            value = f"{emoji_str} • Оценок: **{stats['total']}**"
-            embed.add_field(name=name, value=value, inline=False)
-
-        if not embed.fields:
-            embed.description = "Пока нет оценок за выбранный период."
-
-        try:
-            await interaction.message.edit(embed=embed, view=self)
-        except:
-            await interaction.response.edit_message(embed=embed, view=self)
-
-    @ui.button(label="За неделю", style=discord.ButtonStyle.gray)
-    async def week(self, interaction: discord.Interaction, button: ui.Button):
-        self.current_period = "week"
-        await self.update_leaderboard(interaction)
-
-    @ui.button(label="За месяц", style=discord.ButtonStyle.gray)
-    async def month(self, interaction: discord.Interaction, button: ui.Button):
-        self.current_period = "month"
-        await self.update_leaderboard(interaction)
-
-    @ui.button(label="За всё время", style=discord.ButtonStyle.blurple)
-    async def all_time(self, interaction: discord.Interaction, button: ui.Button):
-        self.current_period = "all"
-        await self.update_leaderboard(interaction)
-
-
-# ==================== MEDIA VIEW ====================
-class MediaView(ui.View):
-    def __init__(self, info: dict, message_id: int):
-        super().__init__(timeout=3600*6)
+# ==================== VIDEO INFO VIEW ====================
+class VideoView(ui.View):
+    def __init__(self, info: dict):
+        super().__init__(timeout=3600)  # 1 час
         self.info = info
-        self.message_id = message_id
 
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
@@ -154,33 +39,84 @@ class MediaView(ui.View):
         views = self.info.get('view_count', self.info.get('play_count', 0))
 
         embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
-        embed.add_field(name="📝 Название", value=title, inline=False)
+        
+        embed.add_field(name="📝 Название", value=title, inline=False)  # Полное название + перенос
         embed.add_field(name="👤 Автор", value=uploader, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
         embed.add_field(name="🔁 Репосты", value=f"{shares:,}", inline=True)
         embed.add_field(name="👁 Просмотры", value=f"{views:,}", inline=True)
-        embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')}")
+        
+        embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')} • Загружено через бот")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @ui.button(label="⭐ Rate", style=discord.ButtonStyle.green)
-    async def rate_video(self, interaction: discord.Interaction, button: ui.Button):
-        view = RatingView(self.message_id)
-        embed = await view.build_ratings_embed(interaction)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
-        if (interaction.message.reference and interaction.user.id != interaction.message.reference.resolved.author.id) and \
+        # Проверяем права: автор сообщения или модератор
+        if (interaction.message.reference and 
+            interaction.user.id != interaction.message.reference.resolved.author.id) and \
            not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ Только автор или модератор может удалить это видео.", ephemeral=True)
             return
+
         await interaction.message.delete()
-        await interaction.response.send_message("✅ Видео удалено.", ephemeral=True)
+        await interaction.response.send_message("✅ Сообщение с видео удалено.", ephemeral=True)
 
 
-# ==================== ОБРАБОТКА TIKTOK (ТОЛЬКО ВИДЕО, чистая версия) ====================
+# ==================== SETTINGS VIEW ====================
+class OptionsView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label="Delete Original", style=discord.ButtonStyle.red, row=0)
+    async def toggle_delete(self, interaction: discord.Interaction, button: ui.Button):
+        settings["delete_original"] = not settings["delete_original"]
+        await self.update_settings(interaction)
+
+    @ui.button(label="Suppress Original", style=discord.ButtonStyle.green, row=0)
+    async def toggle_suppress(self, interaction: discord.Interaction, button: ui.Button):
+        settings["suppress_original"] = not settings["suppress_original"]
+        await self.update_settings(interaction)
+
+    @ui.button(label="Show Buttons", style=discord.ButtonStyle.blurple, row=0)
+    async def toggle_buttons(self, interaction: discord.Interaction, button: ui.Button):
+        settings["show_buttons"] = not settings["show_buttons"]
+        await self.update_settings(interaction)
+
+    @ui.button(label="Turn Bot ON/OFF", style=discord.ButtonStyle.gray, row=1)
+    async def toggle_bot(self, interaction: discord.Interaction, button: ui.Button):
+        settings["bot_enabled"] = not settings["bot_enabled"]
+        await self.update_settings(interaction)
+
+    async def update_settings(self, interaction: discord.Interaction):
+        status = "✅ **Включён**" if settings["bot_enabled"] else "⛔ **Выключен**"
+        await interaction.response.edit_message(
+            content=f"**Настройки бота**\n\n"
+                    f"Delete Original: {'✅' if settings['delete_original'] else '❌'}\n"
+                    f"Suppress Original: {'✅' if settings['suppress_original'] else '❌'}\n"
+                    f"Show Buttons: {'✅' if settings['show_buttons'] else '❌'}\n\n"
+                    f"Состояние бота: {status}",
+            view=self
+        )
+
+
+# ==================== SLASH COMMAND ====================
+@bot.tree.command(name="options", description="Открыть настройки бота")
+async def options(interaction: discord.Interaction):
+    status = "✅ **Включён**" if settings["bot_enabled"] else "⛔ **Выключен**"
+    await interaction.response.send_message(
+        content=f"**Настройки бота**\n\n"
+                f"Delete Original: {'✅' if settings['delete_original'] else '❌'}\n"
+                f"Suppress Original: {'✅' if settings['suppress_original'] else '❌'}\n"
+                f"Show Buttons: {'✅' if settings['show_buttons'] else '❌'}\n\n"
+                f"Состояние бота: {status}",
+        view=OptionsView(),
+        ephemeral=True
+    )
+
+
+# ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
@@ -215,7 +151,8 @@ async def on_message(message: discord.Message):
         user_display_name = message.author.display_name
         video_content = f"**{user_display_name}** отправил TikTok"
 
-        view = VideoView(info, message.id) if settings["show_buttons"] else None
+        # Кнопки только если включено в настройках
+        view = VideoView(info) if settings["show_buttons"] else None
 
         await message.channel.send(
             content=video_content,
@@ -234,28 +171,24 @@ async def on_message(message: discord.Message):
                 await message.edit(suppress=True)
             except:
                 pass
+
         if settings["delete_original"]:
             try:
                 await message.delete()
             except:
                 pass
 
-    except Exception:
-        # Просто тихо удаляем сообщение "Скачиваю..." без показа ошибки пользователю
-        try:
-            await status_msg.delete()
-        except:
-            pass
-
+    except Exception as e:
+        await status_msg.edit(content=f"❌ Ошибка при скачивании: {str(e)[:300]}")
         await message.remove_reaction("⏳", bot.user)
-        # await message.add_reaction("❌")   # можно раскомментировать, если хочешь реакцию
+        await message.add_reaction("❌")
+        print(f"Ошибка с {url}: {e}")
 
 
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f'✅ Бот запущен как {bot.user} | Работает во всех каналах')
-
 
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
