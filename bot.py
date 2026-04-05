@@ -33,7 +33,7 @@ class VideoView(ui.View):
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         title = self.info.get('title', 'Без названия')
-        display_name = self.info.get('uploader', 'Неизвестный автор')   # дисплейное имя
+        display_name = self.info.get('uploader', 'Неизвестный автор')
 
         # Получаем оригинальный @username
         username = ""
@@ -44,7 +44,7 @@ class VideoView(ui.View):
         if not username:
             username = self.info.get('uploader_id', '') or self.info.get('channel', '')
 
-        # Формируем автора в две строки
+        # Автор в две строки
         if username and username != display_name:
             author_str = f"{display_name}\n@{username}"
         else:
@@ -100,11 +100,14 @@ class VideoView(ui.View):
         else:
             formatted_date = "Неизвестно"
 
+        # Аватарка автора
+        avatar_url = self.info.get('uploader_avatar') or self.info.get('thumbnail') or None
+
         embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
      
         embed.add_field(name="📝 Название", value=clean_title, inline=False)
         embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
-        embed.add_field(name="👤 Автор", value=author_str, inline=False)   # ← Две строки
+        embed.add_field(name="👤 Автор", value=author_str, inline=False)
         embed.add_field(name="🎵 Музыка", value=music_str, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
@@ -112,7 +115,11 @@ class VideoView(ui.View):
         embed.add_field(name="👁 Просмотры", value=f"{views:,}", inline=True)
         embed.add_field(name="⭐ Избранное", value=f"{favorites:,}", inline=True)
         embed.add_field(name="📅 Дата загрузки", value=formatted_date, inline=True)
-     
+
+        # Добавляем аватарку автора (если есть)
+        if avatar_url:
+            embed.set_thumbnail(url=avatar_url)
+
         embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')} • Загружено через бот")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
