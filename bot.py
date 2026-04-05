@@ -4,12 +4,18 @@ from discord.ext import commands
 from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
+import re
+
 load_dotenv()
+
 intents = discord.Intents.default()
 intents.message_content = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
+
 VIDEO_DIR = "videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
+
 # Глобальные настройки
 settings = {
     "delete_original": False,
@@ -17,11 +23,13 @@ settings = {
     "show_buttons": True,
     "bot_enabled": True
 }
+
 # ==================== VIDEO INFO VIEW ====================
 class VideoView(ui.View):
     def __init__(self, info: dict):
         super().__init__(timeout=3600) # 1 час
         self.info = info
+
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         title = self.info.get('title', 'Без названия')
@@ -32,17 +40,25 @@ class VideoView(ui.View):
         views = self.info.get('view_count', self.info.get('play_count', 0))
         favorites = self.info.get('save_count', self.info.get('bookmark_count', self.info.get('favorites_count', 0)))
 
-        # Извлечение тегов (сначала из info, если нет — парсим из названия)
+        # Удаляем хэштеги из названия
+        clean_title = re.sub(r'#\w+', '', title).strip()
+        if not clean_title:
+            clean_title = title  # если после очистки ничего не осталось
+
+        # Извлечение тегов
         tags = self.info.get('tags', self.info.get('hashtags', []))
         if not tags and title:
-            import re
             tags = re.findall(r'#(\w+)', title)
         if isinstance(tags, list):
             tags_str = " ".join([f"#{tag}" for tag in tags]) if tags else "Нет тегов"
         else:
             tags_str = str(tags) if tags else "Нет тегов"
 
-        # Форматирование даты загрузки (YYYYMMDD → ДД.ММ.ГГГГ)
+        # Ограничиваем длину тегов, чтобы embed не ломался
+        if len(tags_str) > 500:
+            tags_str = tags_str[:497] + "..."
+
+        # Форматирование даты
         upload_date = self.info.get('upload_date', '')
         if upload_date and len(upload_date) == 8:
             formatted_date = f"{upload_date[6:8]}.{upload_date[4:6]}.{upload_date[0:4]}"
@@ -51,7 +67,7 @@ class VideoView(ui.View):
 
         embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
      
-        embed.add_field(name="📝 Название", value=title, inline=False)
+        embed.add_field(name="📝 Название", value=clean_title, inline=False)
         embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)   # Теги вторыми
         embed.add_field(name="👤 Автор", value=uploader, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
@@ -63,6 +79,7 @@ class VideoView(ui.View):
      
         embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')} • Загружено через бот")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
         if (interaction.message.reference and
@@ -72,6 +89,8 @@ class VideoView(ui.View):
             return
         await interaction.message.delete()
         await interaction.response.send_message("✅ Сообщение с видео удалено.", ephemeral=True)
+
+
 # ==================== SETTINGS VIEW ====================
 class OptionsView(ui.View):
     def __init__(self):
@@ -102,6 +121,8 @@ class OptionsView(ui.View):
                     f"Состояние бота: {status}",
             view=self
         )
+
+
 # ==================== SLASH COMMAND ====================
 @bot.tree.command(name="options", description="Открыть настройки бота")
 async def options(interaction: discord.Interaction):
@@ -115,6 +136,8 @@ async def options(interaction: discord.Interaction):
         view=OptionsView(),
         ephemeral=True
     )
+
+
 # ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
@@ -163,10 +186,14 @@ async def on_message(message: discord.Message):
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("❌")
         print(f"Ошибка с {url}: {e}")
+
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f'✅ Бот запущен как {bot.user} | Работает во всех каналах')
+
+
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
     if not token:
