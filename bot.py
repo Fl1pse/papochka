@@ -34,11 +34,20 @@ class VideoView(ui.View):
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         title = self.info.get('title', 'Без названия')
         uploader = self.info.get('uploader', 'Неизвестный автор')           # дисплейное имя
-        uploader_id = self.info.get('uploader_id', '')                      # @username
+
+        # Получаем настоящий @username
+        username = ""
+        if self.info.get('uploader_url'):
+            # Извлекаем ник из ссылки типа https://www.tiktok.com/@username
+            match = re.search(r'tiktok\.com/@([\w.]+)', self.info.get('uploader_url', ''))
+            if match:
+                username = match.group(1)
+        if not username:
+            username = self.info.get('uploader_id', '') or self.info.get('channel', '')
 
         # Формируем красивое отображение автора
-        if uploader_id:
-            author_str = f"{uploader} (@{uploader_id})"
+        if username:
+            author_str = f"{uploader} (@{username})"
         else:
             author_str = uploader
 
@@ -55,7 +64,7 @@ class VideoView(ui.View):
         if len(clean_title) > 900:
             clean_title = clean_title[:897] + "..."
 
-        # Извлечение тегов
+        # Теги
         tags = self.info.get('tags', self.info.get('hashtags', []))
         if not tags and title:
             tags = re.findall(r'#(\w+)', title)
@@ -96,7 +105,7 @@ class VideoView(ui.View):
      
         embed.add_field(name="📝 Название", value=clean_title, inline=False)
         embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
-        embed.add_field(name="👤 Автор", value=author_str, inline=False)   # ← Изменено здесь
+        embed.add_field(name="👤 Автор", value=author_str, inline=False)
         embed.add_field(name="🎵 Музыка", value=music_str, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
@@ -119,7 +128,7 @@ class VideoView(ui.View):
         await interaction.response.send_message("✅ Сообщение с видео удалено.", ephemeral=True)
 
 
-# ==================== SETTINGS VIEW ====================
+# ==================== SETTINGS VIEW и остальной код без изменений ====================
 class OptionsView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -156,7 +165,6 @@ class OptionsView(ui.View):
         )
 
 
-# ==================== SLASH COMMAND ====================
 @bot.tree.command(name="options", description="Открыть настройки бота")
 async def options(interaction: discord.Interaction):
     status = "✅ **Включён**" if settings["bot_enabled"] else "⛔ **Выключен**"
@@ -171,7 +179,6 @@ async def options(interaction: discord.Interaction):
     )
 
 
-# ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
