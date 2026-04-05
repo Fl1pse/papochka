@@ -4,17 +4,12 @@ from discord.ext import commands
 from discord import app_commands, ui
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
-
 load_dotenv()
-
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
-
 VIDEO_DIR = "videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
-
 # Глобальные настройки
 settings = {
     "delete_original": False,
@@ -22,13 +17,11 @@ settings = {
     "show_buttons": True,
     "bot_enabled": True
 }
-
 # ==================== VIDEO INFO VIEW ====================
 class VideoView(ui.View):
     def __init__(self, info: dict):
-        super().__init__(timeout=3600)  # 1 час
+        super().__init__(timeout=3600) # 1 час
         self.info = info
-
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         title = self.info.get('title', 'Без названия')
@@ -37,58 +30,63 @@ class VideoView(ui.View):
         comments = self.info.get('comment_count', 0)
         shares = self.info.get('repost_count', self.info.get('share_count', 0))
         views = self.info.get('view_count', self.info.get('play_count', 0))
+        favorites = self.info.get('save_count', self.info.get('bookmark_count', self.info.get('favorites_count', 0)))
+        tags = self.info.get('tags', self.info.get('hashtags', []))
+        if isinstance(tags, list):
+            tags_str = " ".join([f"#{tag}" for tag in tags]) if tags else "Нет тегов"
+        else:
+            tags_str = str(tags) if tags else "Нет тегов"
+
+        # Форматирование даты загрузки (YYYYMMDD → ДД.ММ.ГГГГ)
+        upload_date = self.info.get('upload_date', '')
+        if upload_date and len(upload_date) == 8:
+            formatted_date = f"{upload_date[6:8]}.{upload_date[4:6]}.{upload_date[0:4]}"
+        else:
+            formatted_date = "Неизвестно"
 
         embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
-        
-        embed.add_field(name="📝 Название", value=title, inline=False)  # Полное название + перенос
+      
+        embed.add_field(name="📝 Название", value=title, inline=False)
         embed.add_field(name="👤 Автор", value=uploader, inline=False)
         embed.add_field(name="❤️ Лайки", value=f"{likes:,}", inline=True)
         embed.add_field(name="💬 Комментарии", value=f"{comments:,}", inline=True)
         embed.add_field(name="🔁 Репосты", value=f"{shares:,}", inline=True)
         embed.add_field(name="👁 Просмотры", value=f"{views:,}", inline=True)
-        
+        embed.add_field(name="⭐ Избранное", value=f"{favorites:,}", inline=True)
+        embed.add_field(name="📅 Дата загрузки", value=formatted_date, inline=True)
+        embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
+      
         embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')} • Загружено через бот")
-
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
-        # Проверяем права: автор сообщения или модератор
-        if (interaction.message.reference and 
+        if (interaction.message.reference and
             interaction.user.id != interaction.message.reference.resolved.author.id) and \
            not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ Только автор или модератор может удалить это видео.", ephemeral=True)
             return
-
         await interaction.message.delete()
         await interaction.response.send_message("✅ Сообщение с видео удалено.", ephemeral=True)
-
-
 # ==================== SETTINGS VIEW ====================
 class OptionsView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
     @ui.button(label="Delete Original", style=discord.ButtonStyle.red, row=0)
     async def toggle_delete(self, interaction: discord.Interaction, button: ui.Button):
         settings["delete_original"] = not settings["delete_original"]
         await self.update_settings(interaction)
-
     @ui.button(label="Suppress Original", style=discord.ButtonStyle.green, row=0)
     async def toggle_suppress(self, interaction: discord.Interaction, button: ui.Button):
         settings["suppress_original"] = not settings["suppress_original"]
         await self.update_settings(interaction)
-
     @ui.button(label="Show Buttons", style=discord.ButtonStyle.blurple, row=0)
     async def toggle_buttons(self, interaction: discord.Interaction, button: ui.Button):
         settings["show_buttons"] = not settings["show_buttons"]
         await self.update_settings(interaction)
-
     @ui.button(label="Turn Bot ON/OFF", style=discord.ButtonStyle.gray, row=1)
     async def toggle_bot(self, interaction: discord.Interaction, button: ui.Button):
         settings["bot_enabled"] = not settings["bot_enabled"]
         await self.update_settings(interaction)
-
     async def update_settings(self, interaction: discord.Interaction):
         status = "✅ **Включён**" if settings["bot_enabled"] else "⛔ **Выключен**"
         await interaction.response.edit_message(
@@ -99,8 +97,6 @@ class OptionsView(ui.View):
                     f"Состояние бота: {status}",
             view=self
         )
-
-
 # ==================== SLASH COMMAND ====================
 @bot.tree.command(name="options", description="Открыть настройки бота")
 async def options(interaction: discord.Interaction):
@@ -114,26 +110,18 @@ async def options(interaction: discord.Interaction):
         view=OptionsView(),
         ephemeral=True
     )
-
-
 # ==================== ОБРАБОТКА TIKTOK ====================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not settings["bot_enabled"]:
         return
-
     tiktok_urls = [word for word in message.content.split()
                    if any(x in word for x in ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"])]
-
     if not tiktok_urls:
         return
-
     url = tiktok_urls[0]
-    status_msg = await message.channel.send("🔄 Скачиваю видео из TikTok...")
-
     try:
         await message.add_reaction("⏳")
-
         ydl_opts = {
             'format': 'best',
             'merge_output_format': 'mp4',
@@ -141,55 +129,39 @@ async def on_message(message: discord.Message):
             'quiet': True,
             'no_warnings': True,
         }
-
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-
-        await status_msg.edit(content="✅ **Готово!**")
-
         user_display_name = message.author.display_name
         video_content = f"**{user_display_name}** отправил TikTok"
-
-        # Кнопки только если включено в настройках
         view = VideoView(info) if settings["show_buttons"] else None
-
         await message.channel.send(
             content=video_content,
             file=discord.File(filename),
             view=view
         )
-
         if os.path.exists(filename):
             os.remove(filename)
-
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("✅")
-
         if settings["suppress_original"]:
             try:
                 await message.edit(suppress=True)
             except:
                 pass
-
         if settings["delete_original"]:
             try:
                 await message.delete()
             except:
                 pass
-
     except Exception as e:
-        await status_msg.edit(content=f"❌ Ошибка при скачивании: {str(e)[:300]}")
         await message.remove_reaction("⏳", bot.user)
         await message.add_reaction("❌")
         print(f"Ошибка с {url}: {e}")
-
-
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f'✅ Бот запущен как {bot.user} | Работает во всех каналах')
-
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
     if not token:
