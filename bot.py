@@ -45,6 +45,10 @@ class VideoView(ui.View):
         if not clean_title:
             clean_title = title
 
+        # Безопасное обрезание названия (максимум ~900 символов)
+        if len(clean_title) > 900:
+            clean_title = clean_title[:897] + "..."
+
         # Извлечение тегов
         tags = self.info.get('tags', self.info.get('hashtags', []))
         if not tags and title:
@@ -55,10 +59,7 @@ class VideoView(ui.View):
         else:
             tags_str = str(tags) if tags else "Нет тегов"
 
-        # Ограничение длины с нормальным переносом
-        if len(clean_title) > 900:
-            clean_title = clean_title[:897] + "..."
-
+        # Безопасное обрезание тегов
         if len(tags_str) > 900:
             tags_str = tags_str[:897] + "..."
 
