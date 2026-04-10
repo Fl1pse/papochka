@@ -6,6 +6,7 @@ from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
 import re
 import random
+import aiohttp
 
 load_dotenv()
 
@@ -17,6 +18,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 VIDEO_DIR = "videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
+# ==================== НАСТРОЙКИ ====================
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")   # ← Добавь в .env
+
 # Глобальные настройки
 settings = {
     "delete_original": False,
@@ -25,10 +29,10 @@ settings = {
     "bot_enabled": True
 }
 
-# Счётчик сообщений для рандомной реакции
+# Счётчик для рандомных реакций
 message_counter = 0
-MIN_MESSAGES = 2   # минимум сообщений между реакциями
-MAX_MESSAGES = 9   # максимум сообщений между реакциями
+MIN_MESSAGES = 2
+MAX_MESSAGES = 9
 
 # ==================== VIDEO INFO VIEW ====================
 class VideoView(ui.View):
@@ -40,7 +44,6 @@ class VideoView(ui.View):
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
         title = self.info.get('title', 'Без названия')
         display_name = self.info.get('uploader', 'Неизвестный автор')
-
         username = ""
         if self.info.get('uploader_url'):
             match = re.search(r'tiktok\.com/@([\w.]+)', self.info.get('uploader_url', ''))
@@ -49,10 +52,7 @@ class VideoView(ui.View):
         if not username:
             username = self.info.get('uploader_id', '') or self.info.get('channel', '')
 
-        if username and username != display_name:
-            author_str = f"{display_name}\n@{username}"
-        else:
-            author_str = display_name
+        author_str = f"{display_name}\n@{username}" if username and username != display_name else display_name
 
         likes = self.info.get('like_count', 0)
         comments = self.info.get('comment_count', 0)
@@ -69,10 +69,7 @@ class VideoView(ui.View):
         tags = self.info.get('tags', self.info.get('hashtags', []))
         if not tags and title:
             tags = re.findall(r'#(\w+)', title)
-        if isinstance(tags, list):
-            tags_str = " ".join([f"#{tag}" for tag in tags]) if tags else "Нет тегов"
-        else:
-            tags_str = str(tags) if tags else "Нет тегов"
+        tags_str = " ".join([f"#{tag}" for tag in tags]) if isinstance(tags, list) and tags else "Нет тегов"
         if len(tags_str) > 900:
             tags_str = tags_str[:897] + "..."
 
@@ -81,18 +78,13 @@ class VideoView(ui.View):
         music_artist = (self.info.get('artist') or self.info.get('music_author') or
                         self.info.get('music_creator') or self.info.get('creator') or "")
 
-        if "original sound" in music_title.lower():
-            music_str = f"Original Sound — {display_name}"
-        elif music_artist:
-            music_str = f"{music_title} — {music_artist}"
-        else:
-            music_str = music_title
+        music_str = f"Original Sound — {display_name}" if "original sound" in music_title.lower() else \
+                    f"{music_title} — {music_artist}" if music_artist else music_title
 
         upload_date = self.info.get('upload_date', '')
         formatted_date = f"{upload_date[6:8]}.{upload_date[4:6]}.{upload_date[0:4]}" if upload_date and len(upload_date) == 8 else "Неизвестно"
 
         embed = discord.Embed(title="📊 Информация о TikTok видео", color=0xFF0050)
-    
         embed.add_field(name="📝 Название", value=clean_title, inline=False)
         embed.add_field(name="🏷️ Теги", value=tags_str, inline=False)
         embed.add_field(name="👤 Автор", value=author_str, inline=False)
@@ -103,8 +95,8 @@ class VideoView(ui.View):
         embed.add_field(name="👁 Просмотры", value=f"{views:,}", inline=True)
         embed.add_field(name="⭐ Избранное", value=f"{favorites:,}", inline=True)
         embed.add_field(name="📅 Дата загрузки", value=formatted_date, inline=True)
-    
         embed.set_footer(text=f"ID: {self.info.get('id', 'Неизвестно')} • Загружено через бот")
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
@@ -169,14 +161,44 @@ async def options(interaction: discord.Interaction):
     )
 
 
-# ==================== РАНДОМНАЯ РЕАКЦИЯ ЧЕРЕЗ СЛУЧАЙНОЕ КОЛИЧЕСТВО СООБЩЕНИЙ ====================
+# ==================== OpenRouter + Grok ====================
 @bot.event
 async def on_message(message: discord.Message):
     global message_counter
-
     message_counter += 1
 
-    # TikTok-логика
+    # === OpenRouter AI (Grok) ===
+    if (bot.user.mentioned_in(message) or 
+        message.content.lower().startswith(("!ai", "!grok", "!бот", "!чат"))):
+        
+        prompt = message.content.replace(f"<@{bot.user.id}>", "").replace("!ai", "").replace("!grok", "").replace("!бот", "").replace("!чат", "").strip()
+        if not prompt:
+            await message.channel.send("Да, я здесь. Что хочешь спросить?")
+            return
+
+        async with message.channel.typing():
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+                            "HTTP-Referer": "https://discord.com",
+                            "X-Title": "TikTok Bot",
+                        },
+                        json={
+                            "model": "x-ai/grok-2-1212",   # Grok-2
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.85,
+                        }
+                    ) as resp:
+                        data = await resp.json()
+                        answer = data["choices"][0]["message"]["content"]
+                        await message.channel.send(answer[:1990])
+            except Exception as e:
+                await message.channel.send("❌ Не удалось получить ответ от нейросети.")
+
+    # === TikTok логика ===
     if not message.author.bot and settings["bot_enabled"]:
         tiktok_urls = [word for word in message.content.split()
                        if any(x in word for x in ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"])]
@@ -235,7 +257,7 @@ async def on_message(message: discord.Message):
                 await message.add_reaction(random_emoji)
             except:
                 pass
-            message_counter = 0  # сбрасываем счётчик после реакции
+            message_counter = 0
 
 
 @bot.event
@@ -243,7 +265,7 @@ async def on_ready():
     global message_counter
     message_counter = 0
     await bot.tree.sync()
-    print(f'✅ Бот запущен как {bot.user} | Реагирует через случайное количество сообщений')
+    print(f'✅ Бот запущен как {bot.user} | OpenRouter Grok подключён')
 
 
 if __name__ == "__main__":
