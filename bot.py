@@ -23,7 +23,7 @@ os.makedirs(VIDEO_DIR, exist_ok=True)
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 if not OPENROUTER_API_KEY:
-    print("⚠️ WARNING: OPENROUTER_API_KEY не найден в переменных окружения!")
+    print("⚠️ WARNING: OPENROUTER_API_KEY не найден в переменных окружения на Railway!")
 
 # Глобальные настройки
 settings = {
@@ -38,7 +38,7 @@ message_counter = 0
 MIN_MESSAGES = 2
 MAX_MESSAGES = 9
 
-# ==================== VIDEO INFO VIEW (без изменений) ====================
+# ==================== VIDEO INFO VIEW ====================
 class VideoView(ui.View):
     def __init__(self, info: dict):
         super().__init__(timeout=3600)
@@ -46,7 +46,6 @@ class VideoView(ui.View):
 
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
-        # ... (весь твой код VideoView остаётся без изменений) ...
         title = self.info.get('title', 'Без названия')
         display_name = self.info.get('uploader', 'Неизвестный автор')
         username = ""
@@ -102,7 +101,6 @@ class VideoView(ui.View):
 
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
-        # ... (твой код удаления без изменений) ...
         if (interaction.message.reference and
             interaction.user.id != interaction.message.reference.resolved.author.id) and \
            not interaction.user.guild_permissions.manage_messages:
@@ -112,9 +110,8 @@ class VideoView(ui.View):
         await interaction.response.send_message("✅ Сообщение с видео удалено.", ephemeral=True)
 
 
-# ==================== SETTINGS VIEW (без изменений) ====================
+# ==================== SETTINGS VIEW ====================
 class OptionsView(ui.View):
-    # ... (весь твой код OptionsView остаётся как был) ...
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -164,8 +161,8 @@ async def options(interaction: discord.Interaction):
     )
 
 
-# ==================== AI через OpenRouter ====================
-@bot.tree.command(name="ai", description="Задать вопрос Grok (OpenRouter)")
+# ==================== AI через OpenRouter (исправлено) ====================
+@bot.tree.command(name="ai", description="Задать вопрос Grok")
 async def ai_command(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer()
     try:
@@ -178,31 +175,32 @@ async def ai_command(interaction: discord.Interaction, prompt: str):
                     "X-Title": "TikTok Bot",
                 },
                 json={
-                    "model": "x-ai/grok-2-1212",
+                    "model": "x-ai/grok-4",          # ← Актуальная модель
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.85,
                 }
             ) as resp:
                 if resp.status != 200:
-                    text = await resp.text()
-                    await interaction.followup.send(f"❌ Ошибка API ({resp.status}): {text[:500]}")
+                    error_text = await resp.text()
+                    print(f"OpenRouter HTTP {resp.status}: {error_text}")
+                    await interaction.followup.send(f"❌ Ошибка API ({resp.status})")
                     return
                 data = await resp.json()
                 answer = data["choices"][0]["message"]["content"]
                 await interaction.followup.send(answer[:1990])
     except Exception as e:
-        print("OpenRouter Error:")
+        print("OpenRouter Exception:")
         traceback.print_exc()
-        await interaction.followup.send("❌ Не удалось получить ответ от нейросети. Проверь ключ и логи Railway.")
+        await interaction.followup.send("❌ Не удалось получить ответ от нейросети. Проверь ключ в Variables.")
 
 
-# ==================== on_message (TikTok + реакции) ====================
+# ==================== on_message ====================
 @bot.event
 async def on_message(message: discord.Message):
     global message_counter
     message_counter += 1
 
-    # AI через упоминание или !ai !grok и т.д.
+    # AI через упоминание или команды
     if (bot.user.mentioned_in(message) or
         message.content.lower().startswith(("!ai", "!grok", "!бот", "!чат"))):
         
@@ -222,7 +220,7 @@ async def on_message(message: discord.Message):
                             "X-Title": "TikTok Bot",
                         },
                         json={
-                            "model": "x-ai/grok-2-1212",
+                            "model": "x-ai/grok-4",
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.85,
                         }
@@ -240,7 +238,7 @@ async def on_message(message: discord.Message):
                 traceback.print_exc()
                 await message.channel.send("❌ Не удалось получить ответ от нейросети.")
 
-    # TikTok логика (без изменений)
+    # TikTok логика
     if not message.author.bot and settings["bot_enabled"]:
         tiktok_urls = [word for word in message.content.split()
                        if any(x in word for x in ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"])]
@@ -298,7 +296,7 @@ async def on_ready():
     global message_counter
     message_counter = 0
     await bot.tree.sync()
-    print(f'✅ Бот запущен как {bot.user} | OpenRouter Grok подключён')
+    print(f'✅ Бот запущен как {bot.user} | Grok-4 через OpenRouter')
 
 
 if __name__ == "__main__":
