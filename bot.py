@@ -159,8 +159,8 @@ async def options(interaction: discord.Interaction):
     )
 
 
-# ==================== AI (Grok-4) ====================
-@bot.tree.command(name="ai", description="Задать вопрос Grok")
+# ==================== AI — БЕСПЛАТНАЯ МОДЕЛЬ ====================
+@bot.tree.command(name="ai", description="Задать вопрос бесплатной модели")
 async def ai_command(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer()
     try:
@@ -173,23 +173,23 @@ async def ai_command(interaction: discord.Interaction, prompt: str):
                     "X-Title": "TikTok Bot",
                 },
                 json={
-                    "model": "x-ai/grok-4",
+                    "model": "openrouter/free",        # ← бесплатный роутер
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.85,
+                    "temperature": 0.8,
                 }
             ) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
                     print(f"OpenRouter HTTP {resp.status}: {error_text}")
-                    await interaction.followup.send(f"❌ Ошибка API ({resp.status})")
+                    await interaction.followup.send(f"❌ Ошибка ({resp.status}). Возможно лимит бесплатных запросов.")
                     return
                 data = await resp.json()
                 answer = data["choices"][0]["message"]["content"]
                 await interaction.followup.send(answer[:1990])
     except Exception as e:
-        print("OpenRouter Exception:")
+        print("OpenRouter Error:")
         traceback.print_exc()
-        await interaction.followup.send("❌ Не удалось получить ответ от нейросети.")
+        await interaction.followup.send("❌ Не удалось получить ответ. Попробуй позже.")
 
 
 # ==================== on_message ====================
@@ -218,14 +218,14 @@ async def on_message(message: discord.Message):
                             "X-Title": "TikTok Bot",
                         },
                         json={
-                            "model": "x-ai/grok-4",
+                            "model": "openrouter/free",
                             "messages": [{"role": "user", "content": prompt}],
-                            "temperature": 0.85,
+                            "temperature": 0.8,
                         }
                     ) as resp:
                         if resp.status != 200:
                             print(f"OpenRouter HTTP {resp.status}")
-                            await message.channel.send("❌ Ошибка API OpenRouter.")
+                            await message.channel.send("❌ Ошибка бесплатной модели (возможно лимит исчерпан).")
                             return
                         data = await resp.json()
                         answer = data["choices"][0]["message"]["content"]
@@ -293,7 +293,7 @@ async def on_ready():
     global message_counter
     message_counter = 0
     await bot.tree.sync()
-    print(f'✅ Бот запущен как {bot.user} | Grok-4 через OpenRouter')
+    print(f'✅ Бот запущен как {bot.user} | Бесплатная модель OpenRouter подключена')
 
 
 if __name__ == "__main__":
