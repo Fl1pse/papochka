@@ -23,9 +23,8 @@ os.makedirs(VIDEO_DIR, exist_ok=True)
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 if not OPENROUTER_API_KEY:
-    print("⚠️ WARNING: OPENROUTER_API_KEY не найден в переменных окружения на Railway!")
+    print("⚠️ WARNING: OPENROUTER_API_KEY не найден в Variables на Railway!")
 
-# Глобальные настройки
 settings = {
     "delete_original": False,
     "suppress_original": True,
@@ -33,7 +32,6 @@ settings = {
     "bot_enabled": True
 }
 
-# Счётчик для рандомных реакций
 message_counter = 0
 MIN_MESSAGES = 2
 MAX_MESSAGES = 9
@@ -161,7 +159,7 @@ async def options(interaction: discord.Interaction):
     )
 
 
-# ==================== AI через OpenRouter (исправлено) ====================
+# ==================== AI (Grok-4) ====================
 @bot.tree.command(name="ai", description="Задать вопрос Grok")
 async def ai_command(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer()
@@ -175,7 +173,7 @@ async def ai_command(interaction: discord.Interaction, prompt: str):
                     "X-Title": "TikTok Bot",
                 },
                 json={
-                    "model": "x-ai/grok-4",          # ← Актуальная модель
+                    "model": "x-ai/grok-4",
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.85,
                 }
@@ -191,7 +189,7 @@ async def ai_command(interaction: discord.Interaction, prompt: str):
     except Exception as e:
         print("OpenRouter Exception:")
         traceback.print_exc()
-        await interaction.followup.send("❌ Не удалось получить ответ от нейросети. Проверь ключ в Variables.")
+        await interaction.followup.send("❌ Не удалось получить ответ от нейросети.")
 
 
 # ==================== on_message ====================
@@ -226,8 +224,7 @@ async def on_message(message: discord.Message):
                         }
                     ) as resp:
                         if resp.status != 200:
-                            text = await resp.text()
-                            print(f"OpenRouter HTTP {resp.status}: {text}")
+                            print(f"OpenRouter HTTP {resp.status}")
                             await message.channel.send("❌ Ошибка API OpenRouter.")
                             return
                         data = await resp.json()
