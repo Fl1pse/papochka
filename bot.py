@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import re
 import random
 import aiohttp
+import traceback
 
 load_dotenv()
 
@@ -19,7 +20,10 @@ VIDEO_DIR = "videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # ==================== НАСТРОЙКИ ====================
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")   # ← Добавь в .env
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+if not OPENROUTER_API_KEY:
+    print("⚠️ WARNING: OPENROUTER_API_KEY не найден в переменных окружения!")
 
 # Глобальные настройки
 settings = {
@@ -34,7 +38,7 @@ message_counter = 0
 MIN_MESSAGES = 2
 MAX_MESSAGES = 9
 
-# ==================== VIDEO INFO VIEW ====================
+# ==================== VIDEO INFO VIEW (без изменений) ====================
 class VideoView(ui.View):
     def __init__(self, info: dict):
         super().__init__(timeout=3600)
@@ -42,6 +46,7 @@ class VideoView(ui.View):
 
     @ui.button(label="📄 Info", style=discord.ButtonStyle.blurple)
     async def show_info(self, interaction: discord.Interaction, button: ui.Button):
+        # ... (весь твой код VideoView остаётся без изменений) ...
         title = self.info.get('title', 'Без названия')
         display_name = self.info.get('uploader', 'Неизвестный автор')
         username = ""
@@ -51,7 +56,6 @@ class VideoView(ui.View):
                 username = match.group(1)
         if not username:
             username = self.info.get('uploader_id', '') or self.info.get('channel', '')
-
         author_str = f"{display_name}\n@{username}" if username and username != display_name else display_name
 
         likes = self.info.get('like_count', 0)
@@ -60,9 +64,7 @@ class VideoView(ui.View):
         views = self.info.get('view_count', self.info.get('play_count', 0))
         favorites = self.info.get('save_count', self.info.get('bookmark_count', self.info.get('favorites_count', 0)))
 
-        clean_title = re.sub(r'#\w+', '', title).strip()
-        if not clean_title:
-            clean_title = title
+        clean_title = re.sub(r'#\w+', '', title).strip() or title
         if len(clean_title) > 900:
             clean_title = clean_title[:897] + "..."
 
@@ -77,7 +79,6 @@ class VideoView(ui.View):
                        self.info.get('original_sound_title') or "Original Sound")
         music_artist = (self.info.get('artist') or self.info.get('music_author') or
                         self.info.get('music_creator') or self.info.get('creator') or "")
-
         music_str = f"Original Sound — {display_name}" if "original sound" in music_title.lower() else \
                     f"{music_title} — {music_artist}" if music_artist else music_title
 
@@ -101,6 +102,7 @@ class VideoView(ui.View):
 
     @ui.button(label="🗑️ Delete", style=discord.ButtonStyle.red)
     async def delete_video(self, interaction: discord.Interaction, button: ui.Button):
+        # ... (твой код удаления без изменений) ...
         if (interaction.message.reference and
             interaction.user.id != interaction.message.reference.resolved.author.id) and \
            not interaction.user.guild_permissions.manage_messages:
@@ -110,8 +112,9 @@ class VideoView(ui.View):
         await interaction.response.send_message("✅ Сообщение с видео удалено.", ephemeral=True)
 
 
-# ==================== SETTINGS VIEW ====================
+# ==================== SETTINGS VIEW (без изменений) ====================
 class OptionsView(ui.View):
+    # ... (весь твой код OptionsView остаётся как был) ...
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -161,14 +164,46 @@ async def options(interaction: discord.Interaction):
     )
 
 
-# ==================== OpenRouter + Grok ====================
+# ==================== AI через OpenRouter ====================
+@bot.tree.command(name="ai", description="Задать вопрос Grok (OpenRouter)")
+async def ai_command(interaction: discord.Interaction, prompt: str):
+    await interaction.response.defer()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "HTTP-Referer": "https://discord.com",
+                    "X-Title": "TikTok Bot",
+                },
+                json={
+                    "model": "x-ai/grok-2-1212",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.85,
+                }
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    await interaction.followup.send(f"❌ Ошибка API ({resp.status}): {text[:500]}")
+                    return
+                data = await resp.json()
+                answer = data["choices"][0]["message"]["content"]
+                await interaction.followup.send(answer[:1990])
+    except Exception as e:
+        print("OpenRouter Error:")
+        traceback.print_exc()
+        await interaction.followup.send("❌ Не удалось получить ответ от нейросети. Проверь ключ и логи Railway.")
+
+
+# ==================== on_message (TikTok + реакции) ====================
 @bot.event
 async def on_message(message: discord.Message):
     global message_counter
     message_counter += 1
 
-    # === OpenRouter AI (Grok) ===
-    if (bot.user.mentioned_in(message) or 
+    # AI через упоминание или !ai !grok и т.д.
+    if (bot.user.mentioned_in(message) or
         message.content.lower().startswith(("!ai", "!grok", "!бот", "!чат"))):
         
         prompt = message.content.replace(f"<@{bot.user.id}>", "").replace("!ai", "").replace("!grok", "").replace("!бот", "").replace("!чат", "").strip()
@@ -182,23 +217,30 @@ async def on_message(message: discord.Message):
                     async with session.post(
                         "https://openrouter.ai/api/v1/chat/completions",
                         headers={
-                            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+                            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                             "HTTP-Referer": "https://discord.com",
                             "X-Title": "TikTok Bot",
                         },
                         json={
-                            "model": "x-ai/grok-2-1212",   # Grok-2
+                            "model": "x-ai/grok-2-1212",
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.85,
                         }
                     ) as resp:
+                        if resp.status != 200:
+                            text = await resp.text()
+                            print(f"OpenRouter HTTP {resp.status}: {text}")
+                            await message.channel.send("❌ Ошибка API OpenRouter.")
+                            return
                         data = await resp.json()
                         answer = data["choices"][0]["message"]["content"]
                         await message.channel.send(answer[:1990])
             except Exception as e:
+                print("OpenRouter Error:")
+                traceback.print_exc()
                 await message.channel.send("❌ Не удалось получить ответ от нейросети.")
 
-    # === TikTok логика ===
+    # TikTok логика (без изменений)
     if not message.author.bot and settings["bot_enabled"]:
         tiktok_urls = [word for word in message.content.split()
                        if any(x in word for x in ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"])]
@@ -219,14 +261,9 @@ async def on_message(message: discord.Message):
 
                 user_display_name = message.author.display_name
                 video_content = f"**{user_display_name}** отправил TikTok"
-
                 view = VideoView(info) if settings["show_buttons"] else None
 
-                await message.channel.send(
-                    content=video_content,
-                    file=discord.File(filename),
-                    view=view
-                )
+                await message.channel.send(content=video_content, file=discord.File(filename), view=view)
 
                 if os.path.exists(filename):
                     os.remove(filename)
@@ -235,21 +272,17 @@ async def on_message(message: discord.Message):
                 await message.add_reaction("✅")
 
                 if settings["suppress_original"]:
-                    try:
-                        await message.edit(suppress=True)
-                    except:
-                        pass
+                    try: await message.edit(suppress=True)
+                    except: pass
                 if settings["delete_original"]:
-                    try:
-                        await message.delete()
-                    except:
-                        pass
+                    try: await message.delete()
+                    except: pass
             except Exception as e:
                 await message.remove_reaction("⏳", bot.user)
                 await message.add_reaction("❌")
                 print(f"Ошибка с {url}: {e}")
 
-    # === Рандомная реакция через случайное количество сообщений ===
+    # Рандомная реакция
     if message.guild and message.guild.emojis:
         if message_counter >= random.randint(MIN_MESSAGES, MAX_MESSAGES):
             random_emoji = random.choice(message.guild.emojis)
